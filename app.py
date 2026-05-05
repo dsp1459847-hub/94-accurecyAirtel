@@ -65,5 +65,48 @@ if uploaded_file is not None:
                 if hist_a: hist_overall_pool.add(hist_a)
                 if hist_b: hist_overall_pool.add(hist_b)
                 
-                if inp_a and inp_b and hist_
+                # Yeh hai wo line jo aadhi copy hui thi, ab poori hai
+                if inp_a and inp_b and hist_a and hist_b:
+                    if inp_a == hist_a: match_score += 3
+                    if inp_b == hist_b: match_score += 3
+                    if inp_a == hist_b or inp_b == hist_a: match_score += 1.5
+
+            if match_score > 0:
+                pool_match_count = len(overall_input_pool.intersection(hist_overall_pool))
+                final_weight = match_score + (pool_match_count * 2)
                 
+                # Same day data ko stabilize karne ka strict logic
+                tom_target_a, tom_target_b = extract_andar_bahar(df.iloc[i+1][target_shift])
+                if tom_target_a and tom_target_b:
+                    target_andar_score[tom_target_a] += final_weight
+                    target_bahar_score[tom_target_b] += final_weight
+
+        for val in overall_input_pool:
+            if val in rashi_map:
+                rashi_val = rashi_map[val]
+                target_andar_score[rashi_val] += 5  
+                target_bahar_score[rashi_val] += 5
+                
+            if val == '0':
+                for special in ['8', '3', '9', '5']:
+                    target_andar_score[special] += 4
+                    target_bahar_score[special] += 4
+            elif val == '1':
+                target_andar_score['3'] += 4
+                target_bahar_score['3'] += 4
+            elif val == '3' or val == '8' or val == '9':
+                target_andar_score['0'] += 4
+                target_bahar_score['0'] += 4
+
+        sorted_andar = sorted(target_andar_score.items(), key=lambda x: x[1], reverse=True)
+        sorted_bahar = sorted(target_bahar_score.items(), key=lambda x: x[1], reverse=True)
+        
+        st.write(f"### Aaj {target_shift} ke liye Supreme Numbers")
+        
+        st.success(f"🔥 **Super VIP (Maximum Probability):** Andar [{sorted_andar[0][0]}] | Bahar [{sorted_bahar[0][0]}]")
+        st.info(f"⭐ **VIP (Strong Match):** Andar [{sorted_andar[1][0]}, {sorted_andar[2][0]}] | Bahar [{sorted_bahar[1][0]}, {sorted_bahar[2][0]}]")
+        st.warning(f"✔️ **Normal (Cross-Verified Support):** Andar [{sorted_andar[3][0]}, {sorted_andar[4][0]}] | Bahar [{sorted_bahar[3][0]}, {sorted_bahar[4][0]}]")
+
+else:
+    st.info("Kripya upar apni data file upload karein taaki engine analysis shuru kar sake.")
+    
