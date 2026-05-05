@@ -2,18 +2,18 @@ import pandas as pd
 import streamlit as st
 import numpy as np
 
-st.title("🔥 Supreme Platinum v4.0 - ±1 Year Dates")
+st.title("🔥 Supreme Platinum v4.1 - ±1 Year Dates (FIXED!)")
 
 uploaded_file = st.file_uploader("Upload Excel", type=['xlsx'])
 df = None
 
 if uploaded_file:
-    df = pd.read_excel(uploadfile)
+    df = pd.read_excel(uploaded_file)  # FIXED: uploaded_file → uploaded_file
     st.success(f"✅ {len(df)} rows loaded")
 
 if df is not None:
     
-    # 🔥 1 YEAR RANGE SELECTOR
+    # 🔥 1 YEAR RANGE SELECTOR (FIXED)
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -25,49 +25,45 @@ if df is not None:
     with col3:
         months_after = st.slider("⏩ Months After", 0, 12, 3)
     
-    # 🔥 DATE TO INDEX CONVERSION
-    df['DATE_NUM'] = pd.to_numeric(df['DATE'], errors='coerce')
-    base_num = df[df['DATE'].astype(str).str.contains(base_date, na=False)]['DATE_NUM']
+    # 🔥 DATE INDEXING (IMPROVED)
+    df['DATE'] = df['DATE'].astype(str)
+    base_mask = df['DATE'].str.contains(base_date[:8], na=False)  # MMDDYYYY match
     
-    if len(base_num) > 0:
-        base_idx = df[df['DATE_NUM'] == base_num.iloc[0]].index[0]
-        
-        # 1 month ~ 30 rows approx
+    if base_mask.any():
+        base_idx = df[base_mask].index[0]
         before_rows = int(months_before * 30)
         after_rows = int(months_after * 30)
         
         start_idx = max(0, base_idx - before_rows)
         end_idx = min(len(df), base_idx + after_rows + 1)
         
-        range_df = df.iloc[start_idx:end_idx]
+        range_df = df.iloc[start_idx:end_idx].copy()
         st.info(f"📊 **{months_before}M before + {months_after}M after** = {len(range_df)} rows")
-    
     else:
         range_df = df.tail(90)
-        st.warning("Base date not found, using last 90 days")
+        st.warning("⚠️ Base date not exact, using last 90 days")
     
-    # SHIFT
+    # SHIFT SELECT
     target_shift = st.selectbox("🎯 Shift", ['DS','FD','GD','GL','DB','SG','ZA'])
     
-    # 🔥 SUPREME PREDICTION
+    # 🔥 SUPREME PREDICTION ALGO
     def supreme_predict(data, shift):
         scores = {}
         for i in range(len(data)-2):
             try:
-                val1 = data.iloc[i][shift]
-                val2 = data.iloc[i+1][shift]
-                val3 = data.iloc[i+2][shift]
+                val1 = pd.to_numeric(data.iloc[i][shift], errors='coerce')
+                val2 = pd.to_numeric(data.iloc[i+1][shift], errors='coerce')
+                val3 = pd.to_numeric(data.iloc[i+2][shift], errors='coerce')
                 
                 if all(pd.notna([val1, val2, val3])):
                     pred = f"{int(val3):02d}"
                     scores[pred] = scores.get(pred, 0) + 1.0
             except:
-                pass
+                continue
         
-        top_preds = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:12]
-        return top_preds
+        return sorted(scores.items(), key=lambda x: x[1], reverse=True)[:12]
     
-    # BUTTON
+    # 🔥 PREDICT BUTTON
     if st.button(f"🚀 PREDICT {target_shift} (±1 YEAR)", use_container_width=True):
         predictions = supreme_predict(range_df, target_shift)
         
@@ -77,18 +73,28 @@ if df is not None:
             with cols[i%4]:
                 st.metric(f"#{i+1}", pred, f"{score:.0f}x")
         
-        # EXCEL LINE
+        # FIXED CSV LINE (PROPER STRING)
         top3 = [p[0] for p in predictions[:3]]
-        st.code(f'"{base_date}",{target_shift},"{top3[0]}","{top3[1]}","{top3[2]}"')
+        csv_line = f'"{base_date}","{target_shift}","{"","".join(top3)}"'
+        st.code(csv_line)
     
-    # DOWNLOAD
-    if st.button("💾 1-Year CSV"):
+    # 🔥 DOWNLOAD (IMPROVED)
+    if st.button("💾 Download 1-Year CSV"):
         predictions = supreme_predict(range_df, target_shift)
-        csv = f"Date,Shift,Pred1,Pred2,...,Pred10\
-"{base_date}",{target_shift},"
-        csv += '","'.join([p[0] for p in predictions[:10]]) + '"\
+        csv_content = f"Date,Shift,Pred1,Pred2,Pred3,Pred4,Pred5,Pred6,Pred7,Pred8,Pred9,Pred10
+"
+        csv_content += f'"{base_date}","{target_shift}","{"","".join([p[0] for p in predictions[:10]])}"
 '
-        st.download_button("Download", csv, f"1year_{base_date}_{target_shift}.csv")
+        
+        st.download_button(
+            label="📥 Download CSV", 
+            data=csv_content, 
+            file_name=f"1year_{base_date}_{target_shift}.csv",
+            mime="text/csv"
+        )
 
-# PREVIEW
-st.dataframe(df[['DATE','DB']].tail(5) if df is not None else pd.DataFrame())
+# 📊 DATA PREVIEW
+if df is not None:
+    st.dataframe(df[['DATE','DB']].tail(5))
+else:
+    st.info("📤 Upload 0DSP0.xlsx to start!")
