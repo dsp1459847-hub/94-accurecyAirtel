@@ -2,78 +2,65 @@ import pandas as pd
 import streamlit as st
 import numpy as np
 
-st.title("🔥 Supreme Platinum v2.1 - BULLETPROOF")
+st.title("🔥 Supreme Platinum v3.0 - PERFECT")
 
-# 🔥 FILE UPLOAD + ERROR PROTECTION
+# FILE UPLOAD
 uploaded_file = st.file_uploader("Upload Excel", type=['xlsx'])
 df = None
 
 if uploaded_file is not None:
     try:
         df = pd.read_excel(uploaded_file)
-        st.success(f"✅ Loaded {len(df)} rows | Columns: {len(df.columns)}")
-    except Exception as e:
-        st.error("❌ File error. Try again.")
+        st.success(f"✅ Loaded {len(df)} rows")
+    except:
+        st.error("File error")
         df = None
-else:
-    st.info("📤 Please upload Excel file")
 
-# 🔥 SELECTORS - ONLY IF FILE LOADED
+# CONTROLS - ONLY IF FILE
 if df is not None:
-    
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📅 Predict For")
-        # SAFE DATE SELECTOR
-        try:
-            if 'DATE' in df.columns:
-                dates = df['DATE'].dropna().astype(str).unique()[-10:]
-                selected_date = st.selectbox("Date", ["LATEST"] + list(dates))
-            else:
-                selected_date = "LATEST"
-        except:
-            selected_date = "LATEST"
+        selected_date = st.selectbox("📅 Date", ["LATEST"] + df['DATE'].dropna().astype(str).tail(10).tolist())
     
     with col2:
-        st.subheader("🎯 Target Shift")
-        shifts = ['DS', 'FD', 'GD', 'GL', 'DB', 'SG', 'ZA']
-        available_shifts = [s for s in shifts if s in df.columns]
-        target_shift = st.selectbox("Shift", available_shifts)
-    
-    # 🔥 SUPREME PREDICT FUNCTION
-    def supreme_predict(df, target_shift, selected_date="LATEST"):
+        shifts = ['DS','FD','GD','GL','DB','SG','ZA']
+        target_shift = st.selectbox("🎯 Shift", [s for s in shifts if s in df.columns])
+
+    # SUPREME PREDICT
+    def supreme_predict(df, target_shift):
         scores = {f"{i:02d}": 0.0 for i in range(100)}
+        recent = df.tail(30).copy()
         
-        predict_df = df.tail(30).copy()  # Recent 30
-        
-        count = 0
-        for i in range(len(predict_df)-1):
+        for i in range(len(recent)-1):
             try:
-                current_row = predict_df.iloc[i]
-                next_row = predict_df.iloc[i+1]
-                
-                # TARGET CHECK
-                if target_shift not in next_row.index:
-                    continue
-                    
-                target_val = next_row[target_shift]
-                if pd.isna(target_val):
-                    continue
-                
-                pred_num = f"{int(float(str(target_val))):02d}"
-                if len(pred_num) == 2:
-                    weight = 1 + (29-i)*0.03  # Recency
-                    scores[pred_num] += weight
-                    count += 1
-                    
-            except Exception:
-                continue
+                next_val = recent.iloc[i+1][target_shift]
+                if pd.notna(next_val):
+                    pred = f"{int(float(str(next_val))):02d}"
+                    scores[pred] += 1 + (29-i)*0.03
+            except:
+                pass
         
         return sorted(scores.items(), key=lambda x: x[1], reverse=True)[:8]
-    
-    # 🔥 BIG PREDICT BUTTON
-    col1, col2 = st.columns([3,1])
-    with col1:
-        if st.button(f"🚀 SUPREME PREDICT {target_shift}", use_container_width=True):
-            top8 = supreme_predict(df, target_shift, selected_dat
+
+    # BIG BUTTON
+    if st.button(f"🚀 PREDICT {target_shift}", use_container_width=True):
+        top8 = supreme_predict(df, target_shift)
+        
+        st.markdown(f"## 🎯 {target_shift} PREDICTIONS")
+        for i, (pred, score) in enumerate(top8, 1):
+            st.write(f"**{i}. {pred}** - Score: {score:.1f}")
+
+    # CSV
+    if st.button("📥 CSV Download"):
+        top8 = supreme_predict(df, target_shift)
+        csv = "Rank,Pred,Score\
+"
+        for i, (pred, score) in enumerate(top8, 1):
+            csv += f"{i},{pred},{score:.1f}\
+"
+        st.download_button("Download", csv, f"{target_shift}_pred.csv")
+
+# PREVIEW
+if df is not None:
+    st.dataframe(df[['DATE','DS','FD','DB']].tail(3))
