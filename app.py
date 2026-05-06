@@ -4,8 +4,8 @@ from datetime import timedelta
 from collections import defaultdict, Counter
 
 st.set_page_config(layout="wide")
-st.title("MAYA AI: Double Palti Killer & +1/-1 Proximity Engine")
-st.write("Yeh engine bekar Palti aur Rashi ankon ko JAD SE kaat deta hai, aur history ke error (+1/-1) ko pehchan kar naye solid ank add karta hai.")
+st.title("MAYA AI: Rashi-Chain & 7-Day Eliminator Engine")
+st.write("Yeh engine 'Parso -> Kal' ki Rashi Chain check karta hai, aur pichle 5-7 din ke 'Kachra' (Altu-Faltu) ankon ko list se hamesha ke liye kaat deta hai.")
 
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
@@ -17,8 +17,8 @@ def get_andar_bahar(val):
     if len(val) >= 2 and val[:2].isdigit(): return val[0], val[1]
     return None, None
 
-def is_rashi(jodi):
-    return abs(int(jodi[0]) - int(jodi[1])) == 5
+def get_rashi(d):
+    return str((int(d) + 5) % 10)
 
 if uploaded_file is not None:
     if uploaded_file.name.endswith('.csv'):
@@ -48,15 +48,14 @@ if uploaded_file is not None:
     else:
         idx_kal = date_match.index[0]
         idx_parikshan = idx_kal + 1 if (idx_kal + 1) < len(df) else None
-        parikshan_date = sel_date_pd + pd.Timedelta(days=1)
         
-        if idx_kal < 30:
-            st.warning("Engine ko +1/-1 Proximity calculate karne ke liye kam se kam 30 din ka data chahiye.")
+        if idx_kal < 15:
+            st.warning("Engine ko calculate karne ke liye thodi aur history chahiye.")
         else:
-            with st.spinner("MAYA AI Palti/Rashi kaat rahi hai aur +1/-1 history scan kar rahi hai..."):
+            with st.spinner("MAYA AI Rashi-Chain aur 7-Day Elimination kar rahi hai..."):
                 
-                # --- CORE 1: BASE 36 JODIS ---
-                def get_base_36_jodis(target_idx, shift_col):
+                # --- CORE 1: BASE MACRO/MICRO (Base Trend) ---
+                def get_base_36(target_idx, shift_col):
                     scores_a = {str(i): 0 for i in range(10)}
                     scores_b = {str(i): 0 for i in range(10)}
                     
@@ -78,82 +77,89 @@ if uploaded_file is not None:
 
                     top_a = [x[0] for x in sorted(scores_a.items(), key=lambda x: x[1], reverse=True)[:6]]
                     top_b = [x[0] for x in sorted(scores_b.items(), key=lambda x: x[1], reverse=True)[:6]]
-                    
                     return [f"{a}{b}" for a in top_a for b in top_b]
 
-                # --- CORE 2: ELIMINATOR & PROXIMITY (+1/-1) ADDER ---
-                def apply_grandmaster_logic(jodi_list, target_idx, shift_col):
-                    # History Frequencies
+                # --- CORE 2: RASHI CHAIN PREDICTOR (Parso -> Kal -> Aaj) ---
+                def get_rashi_chain_jodis(target_idx, shift_col):
+                    p_a, p_b = get_andar_bahar(df.iloc[target_idx-2][shift_col])
+                    k_a, k_b = get_andar_bahar(df.iloc[target_idx-1][shift_col])
+                    
+                    if not (p_a and p_b and k_a and k_b): return [], False
+                    
+                    rp_a, rp_b = get_rashi(p_a), get_rashi(p_b)
+                    
+                    # Kya Parso ki Rashi Kal mein aayi hai?
+                    rashi_chain_triggered = (rp_a in [k_a, k_b]) or (rp_b in [k_a, k_b])
+                    
+                    chain_jodis = []
+                    if rashi_chain_triggered:
+                        # Scan History: Jab bhi yeh specific chain banti hai, tab history mein kya khulta hai?
+                        hist_next_jodis = []
+                        for i in range(2, target_idx):
+                            hp_a, hp_b = get_andar_bahar(df.iloc[i-2][shift_col])
+                            hk_a, hk_b = get_andar_bahar(df.iloc[i-1][shift_col])
+                            
+                            if hp_a and hk_a:
+                                hrp_a, hrp_b = get_rashi(hp_a), get_rashi(hp_b)
+                                if (hrp_a in [hk_a, hk_b]) or (hrp_b in [hk_a, hk_b]):
+                                    # Chain matched in history! See what came next
+                                    act_val = str(df.iloc[i][shift_col]).replace('.0', '').strip()
+                                    if len(act_val) == 1: act_val = '0' + act_val
+                                    if len(act_val) == 2: hist_next_jodis.append(act_val)
+                                    
+                        if hist_next_jodis:
+                            # Take top 5 most historically accurate outcomes for this specific Rashi Chain
+                            top_outcomes = [item[0] for item in Counter(hist_next_jodis).most_common(5)]
+                            chain_jodis.extend(top_outcomes)
+                            
+                    return chain_jodis, rashi_chain_triggered
+
+                # --- CORE 3: THE ELIMINATOR (Kachra Hatao) ---
+                def apply_grand_filter(base_jodis, rashi_jodis, target_idx, shift_col):
+                    # 1. 7-DAY ELIMINATION RULE (Altu Faltu ank hatao)
+                    days_to_check = 7 if shift_col == 'DS' else 5
+                    garbage_jodis = set()
+                    
+                    for i in range(max(0, target_idx - days_to_check), target_idx):
+                        val = str(df.iloc[i][shift_col]).replace('.0', '').strip()
+                        if len(val) == 1: val = '0' + val
+                        if len(val) == 2: garbage_jodis.add(val)
+                    
+                    # Base Jodis me se Garbage hatao
+                    filtered_base = [j for j in base_jodis if j not in garbage_jodis]
+                    
+                    # 2. SMART PALTI ELIMINATION
                     hist_counts = defaultdict(int)
                     for i in range(target_idx):
                         val = str(df.iloc[i][shift_col]).replace('.0', '').strip()
-                        if len(val) == 1 and val.isdigit(): val = '0' + val
-                        if len(val) == 2 and val.isdigit(): hist_counts[val] += 1
-                            
-                    avg_count = sum(hist_counts.values()) / max(1, len(hist_counts))
+                        if len(val) == 1: val = '0' + val
+                        if len(val) == 2: hist_counts[val] += 1
                     
-                    to_remove = set()
+                    final_list = []
+                    seen_combos = set()
                     
-                    # 1. DOUBLE PALTI KILLER
-                    # Agar 14 aur 41 dono list me hain, aur dono ka combine history score weak hai, to dono uda do
-                    for j in jodi_list:
+                    for j in filtered_base:
                         palti = f"{j[1]}{j[0]}"
-                        if palti in jodi_list and palti != j:
-                            combo_score = hist_counts[j] + hist_counts[palti]
-                            # Threshold: Agar combined score average ke 1.5 guna se bhi kam hai, to dono bekar hain
-                            if combo_score < (avg_count * 1.5):
-                                to_remove.add(j)
-                                to_remove.add(palti)
-
-                    # 2. RASHI KILLER
-                    for j in jodi_list:
-                        if is_rashi(j):
-                            if hist_counts[j] < (avg_count * 0.9): # Weak Rashi pair
-                                to_remove.add(j)
-
-                    # Filtered list
-                    filtered_jodis = [j for j in jodi_list if j not in to_remove]
-
-                    # 3. PROXIMITY (+1 / -1) ERROR TRACKER
-                    # Check past 30 days to see engine's most common error gap for this shift
-                    err_a_history = []
-                    err_b_history = []
-                    
-                    for i in range(max(2, target_idx - 30), target_idx):
-                        past_36 = get_base_36_jodis(i, shift_col)
-                        act_a, act_b = get_andar_bahar(df.iloc[i][shift_col])
+                        combo = "".join(sorted([j[0], j[1]]))
                         
-                        if past_36 and act_a and act_b:
-                            # Compare actual against the engine's #1 predicted combination (top score)
-                            # Assuming past_36[0] is the top prediction logically
-                            top_pred = past_36[0] 
-                            pred_a, pred_b = top_pred[0], top_pred[1]
-                            
-                            err_a = (int(act_a) - int(pred_a)) % 10
-                            err_b = (int(act_b) - int(pred_b)) % 10
-                            err_a_history.append(err_a)
-                            err_b_history.append(err_b)
-                            
-                    most_common_err_a = Counter(err_a_history).most_common(1)[0][0] if err_a_history else 0
-                    most_common_err_b = Counter(err_b_history).most_common(1)[0][0] if err_b_history else 0
-                    
-                    # 4. ADD PROXIMITY JODIS
-                    # Agar error +1, -1, ya +2 hai (yani kareeb se miss ho raha hai)
-                    proximity_added = []
-                    if most_common_err_a != 0 or most_common_err_b != 0:
-                        # Top 2 best base jodis uthao aur usme error gap apply karke naye ank banao
-                        for top_j in jodi_list[:2]:
-                            new_a = str((int(top_j[0]) + most_common_err_a) % 10)
-                            new_b = str((int(top_j[1]) + most_common_err_b) % 10)
-                            new_jodi = f"{new_a}{new_b}"
-                            
-                            if new_jodi not in filtered_jodis:
-                                proximity_added.append(new_jodi)
-                                
-                    final_list = list(set(filtered_jodis + proximity_added))
-                    return final_list, len(to_remove), proximity_added
+                        if palti in filtered_base and palti != j:
+                            if combo not in seen_combos:
+                                seen_combos.add(combo)
+                                # Jo Palti history me zyada aati hai sirf use rakho
+                                if hist_counts[j] > hist_counts[palti]: final_list.append(j)
+                                elif hist_counts[palti] > hist_counts[j]: final_list.append(palti)
+                                else: final_list.extend([j, palti])
+                        else:
+                            if j not in final_list: final_list.append(j)
 
-                # --- UI DISPLAY ---
+                    # 3. ADD RASHI CHAIN JODIS (Yeh sabse pakke hain, isliye inko eliminate nahi karna)
+                    for rj in rashi_jodis:
+                        if rj not in final_list:
+                            final_list.append(rj)
+                            
+                    return final_list, list(garbage_jodis)
+
+                # --- UI DISPLAY (ALL SHIFTS AT ONCE) ---
                 parikshan_date_str = df.iloc[idx_parikshan]['DATE'].strftime('%d-%m-%Y') if idx_parikshan is not None else "Data Pending"
                 
                 st.markdown("---")
@@ -171,22 +177,30 @@ if uploaded_file is not None:
                         if len(parikshan_val) == 1 and parikshan_val.isdigit(): parikshan_val = '0' + parikshan_val
                         
                         target_idx = idx_parikshan if idx_parikshan is not None else idx_kal + 1
-                        base_36 = get_base_36_jodis(target_idx, shift)
-                        final_jodis, removed_count, added_prox = apply_grandmaster_logic(base_36, target_idx, shift)
+                        
+                        # Execute Logic
+                        base_36 = get_base_36(target_idx, shift)
+                        rashi_chain_jodis, is_rashi_triggered = get_rashi_chain_jodis(target_idx, shift)
+                        final_vip, garbage_removed = apply_grand_filter(base_36, rashi_chain_jodis, target_idx, shift)
                         
                         st.write(f"**📥 Input (Kal):** {kal_val if kal_val not in ['nan', 'XX', ''] else '-'}")
                         st.write(f"**🎯 Parikshan:** {parikshan_val if parikshan_val not in ['nan', 'XX', ''] else 'Pending'}")
                         
-                        st.markdown(f"<div style='font-size:14px; color:#856404; background-color:#fff3cd; padding:5px; border-radius:5px; margin-bottom:10px;'>🗑️ Palti/Rashi Hatai: <b>{removed_count}</b><br>➕ +1/-1 se Jodi Jogi: <b>{len(added_prox)}</b></div>", unsafe_allow_html=True)
+                        # Info Tags
+                        tags_html = ""
+                        if is_rashi_triggered:
+                            tags_html += f"<span style='background-color:#ffc107; color:black; padding:3px 6px; border-radius:4px; font-size:12px; font-weight:bold; margin-right:5px;'>🔗 Rashi Chain Active</span>"
+                        tags_html += f"<span style='background-color:#dc3545; color:white; padding:3px 6px; border-radius:4px; font-size:12px; font-weight:bold;'>🗑️ {len(garbage_removed)} Kachra Hata</span>"
+                        st.markdown(f"<div style='margin-bottom:10px;'>{tags_html}</div>", unsafe_allow_html=True)
                         
-                        if final_jodis:
-                            if parikshan_val in final_jodis:
+                        if final_vip:
+                            if parikshan_val in final_vip:
                                 st.markdown(f"<div style='color:white; background-color:#28a745; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>✅ PASS! ({parikshan_val})</div>", unsafe_allow_html=True)
-                            elif parikshan_val:
+                            else:
                                 st.markdown(f"<div style='color:white; background-color:#dc3545; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>❌ Miss</div>", unsafe_allow_html=True)
                                 
-                            st.write(f"**💎 Final VIP Anks ({len(final_jodis)} Jodis):**")
-                            j_chunks = [final_jodis[x:x+5] for x in range(0, len(final_jodis), 5)]
+                            st.write(f"**💎 High-Accuracy VIPs ({len(final_vip)} Jodis):**")
+                            j_chunks = [final_vip[x:x+5] for x in range(0, len(final_vip), 5)]
                             for chunk in j_chunks:
                                 st.code(" | ".join(chunk))
                         else:
@@ -196,7 +210,7 @@ if uploaded_file is not None:
 
                 # --- 11-DAY HISTORY HTML TABLES ---
                 st.markdown("---")
-                st.subheader("📚 Pichle 11 Din Ka Double Filter Tracker (Jo Paas Hua, Sirf Wahan Hara Dabba)")
+                st.subheader("📚 Pichle 11 Din Ka Strict Filter Tracker (Jo Paas Hua, Sirf Wahan Hara Dabba)")
                 
                 def generate_html_table(history_slice):
                     html_table = '<table style="width:100%; text-align:center; border-collapse: collapse; font-size: 16px;">'
@@ -215,8 +229,9 @@ if uploaded_file is not None:
                                 html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#aaa;">-</td>'
                                 continue
                                 
-                            h_base_36 = get_base_36_jodis(row_idx, c)
-                            h_final, _, _ = apply_grandmaster_logic(h_base_36, row_idx, c)
+                            h_base = get_base_36(row_idx, c)
+                            h_rashi, _ = get_rashi_chain_jodis(row_idx, c)
+                            h_final, _ = apply_grand_filter(h_base, h_rashi, row_idx, c)
                             
                             if actual_val in h_final:
                                 html_table += f'<td style="border:2px solid #1e7e34; padding:10px; background-color:#d4edda; color:#155724; font-weight:bold; font-size: 18px;">{actual_val} ✅</td>'
@@ -240,4 +255,4 @@ if uploaded_file is not None:
 
 else:
     st.info("Kripya engine chalane ke liye 0DSP0 sheet upload karein.")
-                            
+                    
