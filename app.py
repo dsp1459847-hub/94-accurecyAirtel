@@ -3,8 +3,8 @@ import streamlit as st
 from collections import Counter, defaultdict
 
 st.set_page_config(layout="wide")
-st.title("MAYA AI: Ultimate Mega-Merge Engine")
-st.write("Yeh engine saare patterns (Fixed Rule, Rashi, Joda, Counting, History Magnet) ko ek saath MERGE karke highest accuracy wale ank nikalta hai.")
+st.title("MAYA AI: War & Tareekh Mega-Merge Engine")
+st.write("Yeh engine saare patterns ko merge karta hai aur 'War' (Weekday) tatha 'Tareekh' (Date) ke aadhar par history numbers ko sabse zyada power deta hai.")
 
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
@@ -69,15 +69,16 @@ if uploaded_file is not None:
         if idx_kal < 10:
             st.warning("Data kam hai. Kam se kam 10 din ki history chahiye.")
         else:
-            with st.spinner("MAYA AI sabhi Patterns aur History ko Merge kar rahi hai..."):
+            with st.spinner("MAYA AI War, Tareekh aur saare patterns ko merge kar rahi hai..."):
                 
-                # --- CORE MEGA-MERGE ENGINE ---
-                def run_mega_merge_scanner(target_idx, shift):
+                # --- CORE WAR & DATE MEGA-MERGE ENGINE ---
+                def run_war_date_scanner(target_idx, shift):
                     val_kal = get_val_str(df.iloc[target_idx-1][shift])
                     if not val_kal or len(val_kal) != 2: return [], []
                     
-                    target_month = df.iloc[target_idx]['DATE'].month if target_idx < len(df) else sel_date_pd.month
-                    target_weekday = df.iloc[target_idx]['DATE'].weekday() if target_idx < len(df) else sel_date_pd.weekday()
+                    target_date = df.iloc[target_idx]['DATE'] if target_idx < len(df) else sel_date_pd + pd.Timedelta(days=1)
+                    target_weekday = target_date.weekday()
+                    target_day = target_date.day
                     
                     active_triggers = get_active_triggers(val_kal)
                     
@@ -97,7 +98,7 @@ if uploaded_file is not None:
                     if ra and rb:
                         rule_pool.update([f"{a}{rb}", f"{ra}{b}", f"{ra}{rb}"])
                         
-                    # --- STEP 2: HISTORY MAGNET SCANNER ---
+                    # --- STEP 2: HISTORY MAGNET SCANNER (With War & Date Boost) ---
                     history_scores = defaultdict(float)
                     
                     for i in range(2, target_idx):
@@ -113,32 +114,28 @@ if uploaded_file is not None:
                                 # Score calculation
                                 pts = len(common_trigs)
                                 
-                                # Mahina aur Din same hone par extra power (Seasonality)
+                                # War (Din) aur Tareekh (Date) ka Massive Multiplier
                                 hist_date = df.iloc[i]['DATE']
-                                if hist_date.month == target_month: pts *= 1.5
-                                if hist_date.weekday() == target_weekday: pts *= 1.2
+                                if hist_date.weekday() == target_weekday: pts *= 2.5
+                                if hist_date.day == target_day: pts *= 3.0
                                 
                                 history_scores[h_act] += pts
                                 
                     # --- STEP 3: THE MASTER MERGE ---
                     final_scores = defaultdict(float)
                     
-                    # Pehle saare history numbers ko dalenge
                     avg_hist_score = sum(history_scores.values()) / max(1, len(history_scores))
                     
                     for jodi, score in history_scores.items():
                         final_scores[jodi] = score
                         
-                    # Phir Rule pool wale numbers ko boost karenge
                     for jodi in rule_pool:
-                        # Agar rule wala number history me bhi hai, to usko massive boost do!
                         if jodi in final_scores:
-                            final_scores[jodi] += (avg_hist_score * 2.0)
+                            final_scores[jodi] += (avg_hist_score * 3.0) # Strongest Merge Boost
                         else:
-                            # Agar sirf rule me hai (history me nahi), tab bhi moderate score do
                             final_scores[jodi] += (avg_hist_score * 0.8)
                             
-                    # Sabse zyada score (Rules + History Combined) wale Top 25 Ank uthao
+                    # Sabse zyada score (Rules + War/Date History) wale Top 30 Ank uthao
                     top_vips = [x[0] for x in sorted(final_scores.items(), key=lambda x: x[1], reverse=True)[:30]]
                     
                     clean_triggers = [t.replace("Anchor_", "Ank ") for t in active_triggers]
@@ -160,14 +157,14 @@ if uploaded_file is not None:
                         parikshan_val = get_val_str(df.iloc[idx_parikshan][shift]) if idx_parikshan is not None else ""
                         target_idx = idx_parikshan if idx_parikshan is not None else idx_kal + 1
                         
-                        final_vips, active_trigs = run_mega_merge_scanner(target_idx, shift)
+                        final_vips, active_trigs = run_war_date_scanner(target_idx, shift)
                         
                         st.write(f"**📥 Input (Kal):** {kal_val if kal_val else '-'}")
                         st.write(f"**🎯 Parikshan:** {parikshan_val if parikshan_val else 'Pending'}")
                         
                         if active_trigs:
                             trig_str = " + ".join(active_trigs)
-                            st.markdown(f"<div style='font-size:12px; color:#004085; background-color:#cce5ff; padding:5px; border-radius:5px; margin-bottom:10px;'>🧩 <b>Merged Patterns:</b> {trig_str}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='font-size:12px; color:#004085; background-color:#cce5ff; padding:5px; border-radius:5px; margin-bottom:10px;'>🧩 <b>Active Filters:</b> {trig_str}</div>", unsafe_allow_html=True)
                             
                         if final_vips:
                             if parikshan_val in final_vips:
@@ -175,7 +172,7 @@ if uploaded_file is not None:
                             elif parikshan_val:
                                 st.markdown(f"<div style='color:white; background-color:#dc3545; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>❌ Miss</div>", unsafe_allow_html=True)
                                 
-                            st.write(f"**💎 Top Merged Prediction ({len(final_vips)} Jodis):**")
+                            st.write(f"**💎 Top War/Date Prediction ({len(final_vips)} Jodis):**")
                             j_chunks = [final_vips[x:x+5] for x in range(0, len(final_vips), 5)]
                             for chunk in j_chunks:
                                 st.code(" | ".join(chunk))
@@ -185,7 +182,7 @@ if uploaded_file is not None:
                         st.markdown("</div>", unsafe_allow_html=True)
 
                 st.markdown("---")
-                st.subheader("📚 Pichle 11 Din Ka Tracker (Mega-Merge Engine)")
+                st.subheader("📚 Pichle 11 Din Ka Tracker (War & Tareekh Mega-Merge)")
                 
                 def generate_html_table(history_slice):
                     html_table = '<table style="width:100%; text-align:center; border-collapse: collapse; font-size: 16px;">'
@@ -203,7 +200,7 @@ if uploaded_file is not None:
                                 html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#aaa;">-</td>'
                                 continue
                                 
-                            h_final, _ = run_mega_merge_scanner(row_idx, c)
+                            h_final, _ = run_war_date_scanner(row_idx, c)
                             
                             if actual_val in h_final:
                                 html_table += f'<td style="border:2px solid #1e7e34; padding:10px; background-color:#d4edda; color:#155724; font-weight:bold; font-size: 18px;">{actual_val} ✅</td>'
@@ -227,4 +224,4 @@ if uploaded_file is not None:
 
 else:
     st.info("Kripya engine chalane ke liye 0DSP0 sheet upload karein.")
-                        
+    
