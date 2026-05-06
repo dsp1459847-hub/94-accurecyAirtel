@@ -1,43 +1,45 @@
 import pandas as pd
 import streamlit as st
 from datetime import timedelta
-from collections import defaultdict
+from collections import Counter
 
 st.set_page_config(layout="wide")
-st.title("MAYA AI: Smart Decider Engine (Add vs Delete)")
-st.write("Ab engine blindly delete nahi karega. Yeh pehle trend check karega ki aaj pichle ankon ko DELETE karna hai ya wapas ADD karna hai.")
+st.title("MAYA AI: Magnet & Trigger Engine (100% Rule Based)")
+st.write("Yeh engine 'Tukka' nahi marta. Yeh check karta hai ki kal Joda, Counting, ya Ulta-Pulta aaya tha kya? Aur us 'Trigger' ke hisaab se history se number khinchta hai.")
 
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
-# Aapke Fixed Rules
-FIXED_PATTERN = {
-    '0': ['3', '8', '9', '5'],
-    '1': ['4', '9', '3', '6'],
-    '2': ['7', '5', '0'], 
-    '3': ['0', '9', '5', '8'],
-    '4': ['1', '9', '6'],
-    '5': ['0', '3', '8'],
-    '6': ['1', '4', '9'],
-    '7': ['2', '0', '5'],
-    '8': ['0', '3', '5'],
-    '9': ['0', '4', '1']
-}
+# ==========================================
+# ADVANCED MAGNET RULES (Devender Ji's Logic)
+# ==========================================
+def is_joda(val):
+    return len(val) == 2 and val[0] == val[1]
 
-def get_val_str(val):
-    if pd.isna(val): return ""
+def is_forward_counting(val):
+    if len(val) != 2: return False
+    return int(val[1]) - int(val[0]) == 1
+
+def is_backward_counting(val):
+    if len(val) != 2: return False
+    return int(val[0]) - int(val[1]) == 1
+
+def get_magnet_digits(d):
+    # Aapke bataye gaye fix khinchne wale ank aur (-1) drop logic
+    magnets = set()
+    if d == '1': magnets.update(['4', '9'])
+    if d == '3': magnets.update(['0', '5', '8', '9'])
+    if d == '9': magnets.update(['0', '8']) # 9 aata hai to 0 aata hai, ya 1 kam karke 8
+    if d == '8': magnets.update(['0', '7']) # 8 aata hai to 0 aata hai, ya 1 kam karke 7
+    if d == '4': magnets.update(['1', '9'])
+    return list(magnets)
+
+def get_andar_bahar(val):
+    if pd.isna(val): return None, None
     val = str(val).replace('.0', '').strip()
-    if val in ['nan', 'XX', '']: return ""
-    if len(val) == 1 and val.isdigit(): return '0' + val
-    if len(val) >= 2 and val[:2].isdigit(): return val[:2]
-    return ""
-
-def get_andar_bahar(val_str):
-    if len(val_str) == 2: return val_str[0], val_str[1]
+    if val in ['nan', 'XX', '']: return None, None
+    if len(val) == 1 and val.isdigit(): val = '0' + val
+    if len(val) >= 2 and val[:2].isdigit(): return val[0], val[1]
     return None, None
-
-def get_rashi(d):
-    if not d: return None
-    return str((int(d) + 5) % 10)
 
 if uploaded_file is not None:
     if uploaded_file.name.endswith('.csv'):
@@ -68,90 +70,82 @@ if uploaded_file is not None:
         idx_kal = date_match.index[0]
         idx_parikshan = idx_kal + 1 if (idx_kal + 1) < len(df) else None
         
-        if idx_kal < 30:
-            st.warning("Trend Decider ko calculate karne ke liye kam se kam 30 din ki history chahiye.")
+        if idx_kal < 15:
+            st.warning("Trigger scan karne ke liye thodi aur history chahiye.")
         else:
-            with st.spinner("MAYA AI trend check kar rahi hai ki ankon ko DELETE karna hai ya ADD..."):
+            with st.spinner("MAYA AI Joda, Counting aur Magnet Triggers check kar rahi hai..."):
                 
-                def apply_smart_decider(target_idx, shift_col):
-                    # --- STEP 1: TREND ANALYZER (Faisla Lena) ---
-                    # Check past 30 days to see if this shift repeats its last 7 days numbers
-                    repeats_count = 0
-                    total_checks = 0
+                # --- CORE ENGINE: TRIGGER BASED SCANNER ---
+                def get_trigger_based_jodis(target_idx, shift_col):
+                    val_kal = str(df.iloc[target_idx-1][shift_col]).replace('.0', '').strip()
+                    if len(val_kal) == 1: val_kal = '0' + val_kal
                     
-                    start_trend = max(7, target_idx - 30)
-                    for i in range(start_trend, target_idx):
-                        act_val = get_val_str(df.iloc[i][shift_col])
-                        if not act_val: continue
+                    if len(val_kal) != 2 or not val_kal.isdigit(): 
+                        return [], "No Active Trigger"
                         
-                        # Get past 7 days values
-                        past_7_vals = []
-                        for k in range(i-7, i):
-                            v = get_val_str(df.iloc[k][shift_col])
-                            if v: past_7_vals.append(v)
+                    k_a, k_b = val_kal[0], val_kal[1]
+                    
+                    # 1. IDENTIFY ACTIVE TRIGGERS FOR TODAY
+                    active_triggers = []
+                    if is_joda(val_kal): active_triggers.append("Joda")
+                    if is_forward_counting(val_kal): active_triggers.append("Sidhi Counting")
+                    if is_backward_counting(val_kal): active_triggers.append("Ulta Counting")
+                    
+                    # 2. HISTORICAL SCAN BASED ON TRIGGERS
+                    # Agar koi trigger active hai, to history me dekho jab bhi ye trigger aaya tha, agle din kya aaya?
+                    hist_outcomes = []
+                    
+                    for i in range(2, target_idx):
+                        hist_val_kal = str(df.iloc[i-1][shift_col]).replace('.0', '').strip()
+                        if len(hist_val_kal) == 1: hist_val_kal = '0' + hist_val_kal
+                        if len(hist_val_kal) != 2 or not hist_val_kal.isdigit(): continue
                             
-                        if act_val in past_7_vals:
-                            repeats_count += 1
-                        total_checks += 1
-                        
-                    repeat_rate = (repeats_count / max(1, total_checks)) * 100
-                    # Agar 30 din me se 20% se zyada baar purane ank repeat hote hain, to ADD trend hai
-                    is_repeat_trend = repeat_rate >= 20.0 
+                        trigger_match = False
+                        if "Joda" in active_triggers and is_joda(hist_val_kal): trigger_match = True
+                        elif "Sidhi Counting" in active_triggers and is_forward_counting(hist_val_kal): trigger_match = True
+                        elif "Ulta Counting" in active_triggers and is_backward_counting(hist_val_kal): trigger_match = True
+                        # Fallback: Agar koi special trigger nahi hai, to general A aur B ka match dekho
+                        elif not active_triggers and (hist_val_kal[0] == k_a or hist_val_kal[1] == k_b):
+                            trigger_match = True
+                            
+                        if trigger_match:
+                            act_next_day = str(df.iloc[i][shift_col]).replace('.0', '').strip()
+                            if len(act_next_day) == 1: act_next_day = '0' + act_next_day
+                            if len(act_next_day) == 2 and act_next_day.isdigit():
+                                hist_outcomes.append(act_next_day)
 
-                    # --- STEP 2: BUILD BASE JODIS ---
-                    val_kal = get_val_str(df.iloc[target_idx-1][shift_col])
-                    val_parso = get_val_str(df.iloc[target_idx-2][shift_col])
-                    k_a, k_b = get_andar_bahar(val_kal)
-                    p_a, p_b = get_andar_bahar(val_parso)
+                    # 3. SELECT TOP OUTCOMES FROM HISTORY
+                    base_vip_jodis = []
+                    if hist_outcomes:
+                        # Grab the top 15 most frequent exact Jodis that came after this specific trigger
+                        top_hist = [item[0] for item in Counter(hist_outcomes).most_common(15)]
+                        base_vip_jodis.extend(top_hist)
+
+                    # 4. APPLY MAGNET RULES (-1 Drop & Fixed Rashi Additions)
+                    magnet_a_pool = set([k_a])
+                    magnet_b_pool = set([k_b])
                     
-                    if not k_a: return [], "No Data", 0, 0
+                    magnet_a_pool.update(get_magnet_digits(k_a))
+                    magnet_b_pool.update(get_magnet_digits(k_b))
                     
-                    pool_a = set([k_a])
-                    pool_b = set([k_b])
+                    magnet_jodis = [f"{a}{b}" for a in magnet_a_pool for b in magnet_b_pool]
                     
-                    # Apply Fixed Logic
-                    if k_a in FIXED_PATTERN: pool_a.update(FIXED_PATTERN[k_a])
-                    if k_b in FIXED_PATTERN: pool_b.update(FIXED_PATTERN[k_b])
-                        
-                    # Apply Rashi Chain logic
-                    if p_a and p_b:
-                        p_a_rashi, p_b_rashi = get_rashi(p_a), get_rashi(p_b)
-                        if k_a == p_a_rashi or k_b == p_a_rashi or k_a == p_b_rashi or k_b == p_b_rashi:
-                            pool_a.update([p_a, k_a])
-                            pool_b.update([p_b, k_b])
-
-                    base_jodis = [f"{a}{b}" for a in pool_a for b in pool_b]
+                    # Combine historical truth with Magnet rules
+                    final_pool = list(set(base_vip_jodis + magnet_jodis))
                     
-                    # --- STEP 3: THE DECIDER (ADD or DELETE) ---
-                    days_lookback = 7 if shift_col == 'DS' else 5
-                    recent_jodis = set()
+                    # 5. REMOVE KACHRA (Dead Numbers of Last 5 Days)
+                    garbage = set()
+                    for i in range(max(0, target_idx - 5), target_idx):
+                        v = str(df.iloc[i][shift_col]).replace('.0', '').strip()
+                        if len(v) == 1: v = '0' + v
+                        if len(v) == 2: garbage.add(v)
+                            
+                    final_filtered = [j for j in final_pool if j not in garbage]
                     
-                    for i in range(max(0, target_idx - days_lookback), target_idx):
-                        v = get_val_str(df.iloc[i][shift_col])
-                        if v: recent_jodis.add(v)
+                    status_msg = " + ".join(active_triggers) if active_triggers else "Normal Digit Magnet"
+                    return final_filtered[:25], status_msg # Return max 25 solid Jodis
 
-                    final_jodis = []
-                    action_taken = ""
-                    added_count = 0
-                    deleted_count = 0
-
-                    if is_repeat_trend:
-                        # TREND KEHTA HAI KI PURANE ANK AA SAKTE HAIN (ADD LOGIC)
-                        action_taken = "ADD (Repeat Phase)"
-                        final_jodis = list(set(base_jodis + list(recent_jodis)))
-                        added_count = len(recent_jodis)
-                    else:
-                        # TREND KEHTA HAI KI PURANE ANK DEAD HAIN (DELETE LOGIC)
-                        action_taken = "DELETE (Dead Phase)"
-                        for j in base_jodis:
-                            if j in recent_jodis:
-                                deleted_count += 1
-                            else:
-                                final_jodis.append(j)
-                        final_jodis = list(set(final_jodis))
-
-                    return final_jodis, action_taken, added_count, deleted_count
-
+                # --- UI DISPLAY ---
                 parikshan_date_str = df.iloc[idx_parikshan]['DATE'].strftime('%d-%m-%Y') if idx_parikshan is not None else "Data Pending"
                 
                 st.markdown("---")
@@ -164,29 +158,30 @@ if uploaded_file is not None:
                         st.markdown(f"<div style='background-color:#f8f9fa; padding:15px; border-radius:10px; border:1px solid #ccc; margin-bottom:20px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);'>", unsafe_allow_html=True)
                         st.markdown(f"<h4 style='text-align:center; color:#e0245e;'>🎰 {shift}</h4>", unsafe_allow_html=True)
                         
-                        kal_val = get_val_str(df.iloc[idx_kal][shift])
-                        parikshan_val = get_val_str(df.iloc[idx_parikshan][shift]) if idx_parikshan is not None else ""
+                        kal_val = str(df.iloc[idx_kal][shift]).replace('.0', '').strip()
+                        parikshan_val = str(df.iloc[idx_parikshan][shift]).replace('.0', '').strip() if idx_parikshan is not None else ""
+                        if len(parikshan_val) == 1 and parikshan_val.isdigit(): parikshan_val = '0' + parikshan_val
                         
                         target_idx = idx_parikshan if idx_parikshan is not None else idx_kal + 1
                         
-                        final_vips, trend_action, add_c, del_c = apply_smart_decider(target_idx, shift)
+                        final_vips, trigger_status = get_trigger_based_jodis(target_idx, shift)
                         
-                        st.write(f"**📥 Input (Kal):** {kal_val if kal_val else '-'}")
-                        st.write(f"**🎯 Parikshan:** {parikshan_val if parikshan_val else 'Pending'}")
+                        st.write(f"**📥 Input (Kal):** {kal_val if kal_val not in ['nan', 'XX', ''] else '-'}")
+                        st.write(f"**🎯 Parikshan:** {parikshan_val if parikshan_val not in ['nan', 'XX', ''] else 'Pending'}")
                         
-                        # --- DYNAMIC DECIDER UI ---
-                        if trend_action == "ADD (Repeat Phase)":
-                            st.markdown(f"<div style='background-color:#cce5ff; color:#004085; padding:5px; border-radius:5px; font-size:13px; margin-bottom:10px; font-weight:bold;'>🔄 Trend: REPEAT<br>➕ {add_c} Pichle Ank Jode Gaye</div>", unsafe_allow_html=True)
-                        elif trend_action == "DELETE (Dead Phase)":
-                            st.markdown(f"<div style='background-color:#f8d7da; color:#721c24; padding:5px; border-radius:5px; font-size:13px; margin-bottom:10px; font-weight:bold;'>🚫 Trend: DEAD<br>🗑️ {del_c} Pichle Ank Delete Kiye</div>", unsafe_allow_html=True)
-                        
+                        # Trigger Notification
+                        if "Normal" not in trigger_status and trigger_status != "No Active Trigger":
+                            st.markdown(f"<div style='font-size:12px; color:#856404; background-color:#fff3cd; padding:5px; border-radius:5px; margin-bottom:10px;'>🧲 Program Active: <b>{trigger_status}</b></div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"<div style='font-size:12px; color:#155724; background-color:#d4edda; padding:5px; border-radius:5px; margin-bottom:10px;'>🧲 Program Active: Normal Magnet</div>", unsafe_allow_html=True)
+                            
                         if final_vips:
                             if parikshan_val in final_vips:
-                                st.markdown(f"<div style='color:white; background-color:#28a745; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>✅ Pass! ({parikshan_val})</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div style='color:white; background-color:#28a745; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>✅ PASS! ({parikshan_val})</div>", unsafe_allow_html=True)
                             elif parikshan_val:
                                 st.markdown(f"<div style='color:white; background-color:#dc3545; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>❌ Miss</div>", unsafe_allow_html=True)
                                 
-                            st.write(f"**💎 Final Jodis ({len(final_vips)}):**")
+                            st.write(f"**💎 High-Impact Jodis ({len(final_vips)}):**")
                             j_chunks = [final_vips[x:x+5] for x in range(0, len(final_vips), 5)]
                             for chunk in j_chunks:
                                 st.code(" | ".join(chunk))
@@ -196,7 +191,7 @@ if uploaded_file is not None:
                         st.markdown("</div>", unsafe_allow_html=True)
 
                 st.markdown("---")
-                st.subheader("📚 Pichle 11 Din Ka Tracker (Trend Decider ke Aadhar Par)")
+                st.subheader("📚 Pichle 11 Din Ka Tracker (Magnet & Trigger Results)")
                 
                 def generate_html_table(history_slice):
                     html_table = '<table style="width:100%; text-align:center; border-collapse: collapse; font-size: 16px;">'
@@ -209,20 +204,18 @@ if uploaded_file is not None:
                         html_table += f'<td style="border:1px solid #ccc; padding:10px; font-weight:bold; background-color:#f8f9fa;">{row["DATE"].strftime("%d-%m-%Y")}</td>'
                         
                         for c in cols:
-                            actual_val = get_val_str(row[c])
-                            if not actual_val:
+                            actual_val = str(row[c]).replace('.0', '').strip()
+                            if len(actual_val) == 1 and actual_val.isdigit(): actual_val = '0' + actual_val
+                            if actual_val in ['nan', 'XX', '']:
                                 html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#aaa;">-</td>'
                                 continue
                                 
-                            h_final, action, _, _ = apply_smart_decider(row_idx, c)
-                            
-                            # Chota indicator dikhane ke liye ki add kiya tha ya delete
-                            marker = "🔄" if action == "ADD (Repeat Phase)" else "🗑️"
+                            h_final, _ = get_trigger_based_jodis(row_idx, c)
                             
                             if actual_val in h_final:
-                                html_table += f'<td style="border:2px solid #1e7e34; padding:10px; background-color:#d4edda; color:#155724; font-weight:bold; font-size: 18px;">{actual_val} ✅ {marker}</td>'
+                                html_table += f'<td style="border:2px solid #1e7e34; padding:10px; background-color:#d4edda; color:#155724; font-weight:bold; font-size: 18px;">{actual_val} ✅</td>'
                             else:
-                                html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#333;">{actual_val} <span style="font-size:12px;">{marker}</span></td>'
+                                html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#333;">{actual_val}</td>'
                                 
                         html_table += '</tr>'
                     html_table += '</table>'
@@ -241,4 +234,4 @@ if uploaded_file is not None:
 
 else:
     st.info("Kripya engine chalane ke liye 0DSP0 sheet upload karein.")
-    
+                
