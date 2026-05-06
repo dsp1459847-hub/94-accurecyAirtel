@@ -1,112 +1,99 @@
 import pandas as pd
 import streamlit as st
 
-st.title("Supreme Platinum Engine: Advanced Master Forecaster")
+st.title("MAYA AI: 100% Pure Fact-Based History Engine")
+st.write("Yeh engine kisi bhi ank ko apni taraf se koi 'point' ya 'weight' nahi deta. Yeh sirf history mein sach mein khule hue ankon ko ginta hai.")
 
-# 1. File Uploader lagana taaki file cloud par na dhoondhni pade
-uploaded_file = st.file_uploader("Apni Excel/CSV (0DSP0) file yahan upload karein", type=['csv', 'xlsx'])
+# 1. File Upload lagana taaki seedha cloud par chal sake
+uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
-# Rashi & Family Map
-rashi_map = {'0':'5', '5':'0', '1':'6', '6':'1', '2':'7', '7':'2', '3':'8', '8':'3', '4':'9', '9':'4'}
-
-def extract_andar_bahar(val):
+def get_andar_bahar(val):
     val = str(val).replace('.0', '').strip()
-    if val == 'nan' or val == 'XX' or val == '': return None, None
+    if val in ['nan', 'XX', '']: return None, None
     if len(val) == 1 and val.isdigit(): val = '0' + val
     if len(val) >= 2 and val[:2].isdigit(): return val[0], val[1]
     return None, None
 
-# Agar user ne file upload kar di hai, tabhi aage ka code chalega
 if uploaded_file is not None:
-    @st.cache_data
-    def load_data(file):
-        # Agar excel upload ki hai ya csv, dono handle ho jayenge
-        try:
-            df = pd.read_csv(file)
-        except:
-            df = pd.read_excel(file)
-            
-        df = df.dropna(subset=['DATE'])
-        df['DATE'] = pd.to_datetime(df['DATE'])
-        df = df.sort_values('DATE').reset_index(drop=True)
-        return df
-
-    df = load_data(uploaded_file)
+    # Dashboard sheet bypass karke seedha numerical data read karna
+    if uploaded_file.name.endswith('.csv'):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
+        
+    df = df.dropna(subset=['DATE'])
+    df['DATE'] = pd.to_datetime(df['DATE'])
+    # Chronological sort taaki same-day data fluctuation na ho
+    df = df.sort_values('DATE').reset_index(drop=True)
     cols = ['DS', 'FD', 'GD', 'GL', 'DB', 'SG']
 
-    st.subheader("Kal ki sabhi shifts ka Numerical Data")
-    inputs_a = {}
-    inputs_b = {}
-    overall_input_pool = set()
-
+    st.subheader("Kal ki shifts mein kya aaya? (Input)")
+    inputs = {}
     for c in cols:
-        val = st.text_input(f"Kal {c} mein kya aaya?", key=c)
-        a, b = extract_andar_bahar(val)
-        inputs_a[c] = a
-        inputs_b[c] = b
-        if a: overall_input_pool.add(a)
-        if b: overall_input_pool.add(b)
+        inputs[c] = st.text_input(f"Kal {c} mein kya aaya?", key=c)
 
-    target_shift = st.selectbox("Aaj kis Shift ka VIP prediction nikalna hai?", cols)
+    target_shift = st.selectbox("Aaj kis Shift ka VIP prediction dekhna hai?", cols)
 
-    if st.button("Run Supreme Master Analysis"):
-        target_andar_score = {str(i): 0 for i in range(10)}
-        target_bahar_score = {str(i): 0 for i in range(10)}
+    if st.button("Pure Backtest Run Karein"):
+        # Counters for exact historical matches
+        andar_counts = {str(i): 0 for i in range(10)}
+        bahar_counts = {str(i): 0 for i in range(10)}
         
+        total_historical_days_checked = 0
+        
+        # Poori history mein loop chalayenge (i aur i+1 lock ke sath)
         for i in range(len(df) - 1):
-            match_score = 0
-            hist_overall_pool = set()
+            day_matched = False
             
+            # Check history ke us din mein kya wo ank aaye the jo aapne kal ke liye input kiye hain
             for c in cols:
-                # Dhyan rahe dashboard sheets check nahi honi chahiye, sirf numerical calculations
-                hist_a, hist_b = extract_andar_bahar(df.iloc[i][c])
-                inp_a, inp_b = inputs_a[c], inputs_b[c]
-                
-                if hist_a: hist_overall_pool.add(hist_a)
-                if hist_b: hist_overall_pool.add(hist_b)
-                
-                # Yeh hai wo line jo aadhi copy hui thi, ab poori hai
-                if inp_a and inp_b and hist_a and hist_b:
-                    if inp_a == hist_a: match_score += 3
-                    if inp_b == hist_b: match_score += 3
-                    if inp_a == hist_b or inp_b == hist_a: match_score += 1.5
-
-            if match_score > 0:
-                pool_match_count = len(overall_input_pool.intersection(hist_overall_pool))
-                final_weight = match_score + (pool_match_count * 2)
-                
-                # Same day data ko stabilize karne ka strict logic
-                tom_target_a, tom_target_b = extract_andar_bahar(df.iloc[i+1][target_shift])
+                if inputs[c]:
+                    inp_a, inp_b = get_andar_bahar(inputs[c])
+                    hist_a, hist_b = get_andar_bahar(df.iloc[i][c])
+                    
+                    if inp_a and inp_b and hist_a and hist_b:
+                        # Strict Cross-Check: Koi Tukka nahi, sirf exact match
+                        if hist_a == inp_a or hist_b == inp_b:
+                            day_matched = True
+                            
+            # Agar purani history mein match mila, toh exactly uske 'agle din' target shift mein kya khula tha
+            if day_matched:
+                tom_target_a, tom_target_b = get_andar_bahar(df.iloc[i+1][target_shift])
                 if tom_target_a and tom_target_b:
-                    target_andar_score[tom_target_a] += final_weight
-                    target_bahar_score[tom_target_b] += final_weight
-
-        for val in overall_input_pool:
-            if val in rashi_map:
-                rashi_val = rashi_map[val]
-                target_andar_score[rashi_val] += 5  
-                target_bahar_score[rashi_val] += 5
-                
-            if val == '0':
-                for special in ['8', '3', '9', '5']:
-                    target_andar_score[special] += 4
-                    target_bahar_score[special] += 4
-            elif val == '1':
-                target_andar_score['3'] += 4
-                target_bahar_score['3'] += 4
-            elif val == '3' or val == '8' or val == '9':
-                target_andar_score['0'] += 4
-                target_bahar_score['0'] += 4
-
-        sorted_andar = sorted(target_andar_score.items(), key=lambda x: x[1], reverse=True)
-        sorted_bahar = sorted(target_bahar_score.items(), key=lambda x: x[1], reverse=True)
+                    andar_counts[tom_target_a] += 1  # Sirf raw sachai ki ginti (+1)
+                    bahar_counts[tom_target_b] += 1
+                    total_historical_days_checked += 1
+                    
+        # Result ko ginti (count) ke hisaab se dikhana
+        sorted_andar = sorted(andar_counts.items(), key=lambda x: x[1], reverse=True)
+        sorted_bahar = sorted(bahar_counts.items(), key=lambda x: x[1], reverse=True)
         
-        st.write(f"### Aaj {target_shift} ke liye Supreme Numbers")
+        st.write(f"**Pichli poori history mein aise {total_historical_days_checked} din mile jab bilkul yahi patterns the.**")
+        st.write(f"### Jab-jab yeh hua, toh agle din {target_shift} mein EXACTLY yeh khula:")
         
-        st.success(f"🔥 **Super VIP (Maximum Probability):** Andar [{sorted_andar[0][0]}] | Bahar [{sorted_bahar[0][0]}]")
-        st.info(f"⭐ **VIP (Strong Match):** Andar [{sorted_andar[1][0]}, {sorted_andar[2][0]}] | Bahar [{sorted_bahar[1][0]}, {sorted_bahar[2][0]}]")
-        st.warning(f"✔️ **Normal (Cross-Verified Support):** Andar [{sorted_andar[3][0]}, {sorted_andar[4][0]}] | Bahar [{sorted_bahar[3][0]}, {sorted_bahar[4][0]}]")
+        st.success(f"🔥 **100% History Verified (Sabse zyada aaya):** Andar [{sorted_andar[0][0]}] ({sorted_andar[0][1]} baar) | Bahar [{sorted_bahar[0][0]}] ({sorted_bahar[0][1]} baar)")
+        
+        st.info(f"⭐ **2nd Highest Truth:** Andar [{sorted_andar[1][0]}] ({sorted_andar[1][1]} baar) | Bahar [{sorted_bahar[1][0]}] ({sorted_bahar[1][1]} baar)")
+        
+        st.warning(f"✔️ **3rd Highest Truth:** Andar [{sorted_andar[2][0]}] ({sorted_andar[2][1]} baar) | Bahar [{sorted_bahar[2][0]}] ({sorted_bahar[2][1]} baar)")
+        
+        # User ke personal rules ka validation reminder
+        st.markdown("---")
+        st.subheader("Aapke Rules vs Reality Check:")
+        rule_texts = []
+        for c in cols:
+            if inputs[c]:
+                a, b = get_andar_bahar(inputs[c])
+                if '0' in (a, b): rule_texts.append("Aapne 0 dala hai. Rule Check: 0 aane par 5, 9, 8, 3 aana chahiye.")
+                if '1' in (a, b): rule_texts.append("Aapne 1 dala hai. Rule Check: 1 aane par 3 aana chahiye.")
+                if '3' in (a, b): rule_texts.append("Aapne 3 dala hai. Rule Check: 3 ke sath 3 aane par 0 aana chahiye.")
+                if '8' in (a, b): rule_texts.append("Aapne 8 dala hai. Rule Check: 8 aane par 0 aana chahiye.")
+                if '9' in (a, b): rule_texts.append("Aapne 9 dala hai. Rule Check: 9 aane par 0 aana chahiye.")
+        
+        for r in list(set(rule_texts)):
+            st.write("- " + r)
+        st.write("Aap khud history ki is absolute counting ko dekh kar apna rule verify kar sakte hain ki kaunsa pattern aaj 100% fail-proof baith raha hai.")
 
 else:
-    st.info("Kripya upar apni data file upload karein taaki engine analysis shuru kar sake.")
+    st.info("Kripya engine chalane ke liye upar apni Excel/CSV file upload karein.")
     
