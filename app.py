@@ -4,17 +4,35 @@ from datetime import timedelta
 from collections import defaultdict
 
 st.set_page_config(layout="wide")
-st.title("MAYA AI: Cross-Shift Rashi Impact Engine")
-st.write("Yeh engine Parso aur Kal ki shifton ko cross-match karke Rashi Impact nikalta hai.")
+st.title("MAYA AI: Smart Decider Engine (Add vs Delete)")
+st.write("Ab engine blindly delete nahi karega. Yeh pehle trend check karega ki aaj pichle ankon ko DELETE karna hai ya wapas ADD karna hai.")
 
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
-def get_andar_bahar(val):
-    if pd.isna(val): return None, None
+# Aapke Fixed Rules
+FIXED_PATTERN = {
+    '0': ['3', '8', '9', '5'],
+    '1': ['4', '9', '3', '6'],
+    '2': ['7', '5', '0'], 
+    '3': ['0', '9', '5', '8'],
+    '4': ['1', '9', '6'],
+    '5': ['0', '3', '8'],
+    '6': ['1', '4', '9'],
+    '7': ['2', '0', '5'],
+    '8': ['0', '3', '5'],
+    '9': ['0', '4', '1']
+}
+
+def get_val_str(val):
+    if pd.isna(val): return ""
     val = str(val).replace('.0', '').strip()
-    if val in ['nan', 'XX', '']: return None, None
-    if len(val) == 1 and val.isdigit(): val = '0' + val
-    if len(val) >= 2 and val[:2].isdigit(): return val[0], val[1]
+    if val in ['nan', 'XX', '']: return ""
+    if len(val) == 1 and val.isdigit(): return '0' + val
+    if len(val) >= 2 and val[:2].isdigit(): return val[:2]
+    return ""
+
+def get_andar_bahar(val_str):
+    if len(val_str) == 2: return val_str[0], val_str[1]
     return None, None
 
 def get_rashi(d):
@@ -50,107 +68,89 @@ if uploaded_file is not None:
         idx_kal = date_match.index[0]
         idx_parikshan = idx_kal + 1 if (idx_kal + 1) < len(df) else None
         
-        if idx_kal < 10:
-            st.warning("Engine ko Rashi logic calculate karne ke liye history chahiye.")
+        if idx_kal < 30:
+            st.warning("Trend Decider ko calculate karne ke liye kam se kam 30 din ki history chahiye.")
         else:
-            with st.spinner("MAYA AI Parso aur Kal ki shifton ka Rashi Connection dhoondh rahi hai..."):
+            with st.spinner("MAYA AI trend check kar rahi hai ki ankon ko DELETE karna hai ya ADD..."):
                 
-                def get_rashi_vip_jodis(target_idx, target_shift):
-                    scores_a = {str(i): 0 for i in range(10)}
-                    scores_b = {str(i): 0 for i in range(10)}
+                def apply_smart_decider(target_idx, shift_col):
+                    # --- STEP 1: TREND ANALYZER (Faisla Lena) ---
+                    # Check past 30 days to see if this shift repeats its last 7 days numbers
+                    repeats_count = 0
+                    total_checks = 0
                     
-                    active_rashi_links = []
-                    
-                    for c_parso in cols:
-                        # SIMPLE VARIABLES USE KIYE HAIN COPY-PASTE ERROR SE BACHNE KE LIYE
-                        row_parso_main = target_idx - 2
-                        p_a, p_b = get_andar_bahar(df.iloc[row_parso_main][c_parso])
-                        if not p_a: continue
+                    start_trend = max(7, target_idx - 30)
+                    for i in range(start_trend, target_idx):
+                        act_val = get_val_str(df.iloc[i][shift_col])
+                        if not act_val: continue
                         
-                        p_a_rashi = get_rashi(p_a)
-                        p_b_rashi = get_rashi(p_b)
+                        # Get past 7 days values
+                        past_7_vals = []
+                        for k in range(i-7, i):
+                            v = get_val_str(df.iloc[k][shift_col])
+                            if v: past_7_vals.append(v)
+                            
+                        if act_val in past_7_vals:
+                            repeats_count += 1
+                        total_checks += 1
                         
-                        for c_kal in cols:
-                            row_kal_main = target_idx - 1
-                            k_a, k_b = get_andar_bahar(df.iloc[row_kal_main][c_kal])
-                            if not k_a: continue
-                            
-                            if k_a == p_a_rashi or k_a == p_a:
-                                active_rashi_links.append({'p_shift': c_parso, 'p_pos': 'A', 'k_shift': c_kal, 'k_pos': 'A', 'p_val': p_a})
-                            if k_b == p_a_rashi or k_b == p_a:
-                                active_rashi_links.append({'p_shift': c_parso, 'p_pos': 'A', 'k_shift': c_kal, 'k_pos': 'B', 'p_val': p_a})
-                            if k_a == p_b_rashi or k_a == p_b:
-                                active_rashi_links.append({'p_shift': c_parso, 'p_pos': 'B', 'k_shift': c_kal, 'k_pos': 'A', 'p_val': p_b})
-                            if k_b == p_b_rashi or k_b == p_b:
-                                active_rashi_links.append({'p_shift': c_parso, 'p_pos': 'B', 'k_shift': c_kal, 'k_pos': 'B', 'p_val': p_b})
+                    repeat_rate = (repeats_count / max(1, total_checks)) * 100
+                    # Agar 30 din me se 20% se zyada baar purane ank repeat hote hain, to ADD trend hai
+                    is_repeat_trend = repeat_rate >= 20.0 
 
-                    for i in range(2, target_idx):
-                        act_a, act_b = get_andar_bahar(df.iloc[i][target_shift])
-                        if not act_a: continue
+                    # --- STEP 2: BUILD BASE JODIS ---
+                    val_kal = get_val_str(df.iloc[target_idx-1][shift_col])
+                    val_parso = get_val_str(df.iloc[target_idx-2][shift_col])
+                    k_a, k_b = get_andar_bahar(val_kal)
+                    p_a, p_b = get_andar_bahar(val_parso)
+                    
+                    if not k_a: return [], "No Data", 0, 0
+                    
+                    pool_a = set([k_a])
+                    pool_b = set([k_b])
+                    
+                    # Apply Fixed Logic
+                    if k_a in FIXED_PATTERN: pool_a.update(FIXED_PATTERN[k_a])
+                    if k_b in FIXED_PATTERN: pool_b.update(FIXED_PATTERN[k_b])
                         
-                        match_weight = 0
-                        for link in active_rashi_links:
-                            # ⚠️ YAHAN MAIN CHANGES KIYE HAIN TAaki BRACKETS NA UDEIN ⚠️
-                            hist_row_parso = i - 2
-                            hist_row_kal = i - 1
-                            shift_p = link['p_shift']
-                            shift_k = link['k_shift']
-                            
-                            hp_a, hp_b = get_andar_bahar(df.iloc[hist_row_parso][shift_p])
-                            hk_a, hk_b = get_andar_bahar(df.iloc[hist_row_kal][shift_k])
-                            
-                            if not (hp_a and hk_a): continue
-                            
-                            hp_val = hp_a if link['p_pos'] == 'A' else hp_b
-                            hk_val = hk_a if link['k_pos'] == 'A' else hk_b
-                            
-                            if hk_val == get_rashi(hp_val) or hk_val == hp_val:
-                                power = 3 if (shift_p == target_shift or shift_k == target_shift) else 1
-                                match_weight += power
-                                
-                        if match_weight > 0:
-                            scores_a[act_a] += match_weight
-                            scores_b[act_b] += match_weight
+                    # Apply Rashi Chain logic
+                    if p_a and p_b:
+                        p_a_rashi, p_b_rashi = get_rashi(p_a), get_rashi(p_b)
+                        if k_a == p_a_rashi or k_b == p_a_rashi or k_a == p_b_rashi or k_b == p_b_rashi:
+                            pool_a.update([p_a, k_a])
+                            pool_b.update([p_b, k_b])
 
-                    top_a = [x[0] for x in sorted(scores_a.items(), key=lambda x: x[1], reverse=True)[:6]]
-                    top_b = [x[0] for x in sorted(scores_b.items(), key=lambda x: x[1], reverse=True)[:6]]
+                    base_jodis = [f"{a}{b}" for a in pool_a for b in pool_b]
                     
-                    garbage = set()
-                    safe_digits = set()
-                    for link in active_rashi_links:
-                        safe_digits.add(link['p_val'])
-                        safe_digits.add(get_rashi(link['p_val']))
+                    # --- STEP 3: THE DECIDER (ADD or DELETE) ---
+                    days_lookback = 7 if shift_col == 'DS' else 5
+                    recent_jodis = set()
                     
-                    # Garbage collection logic
-                    start_garb = max(0, target_idx - 5)
-                    for i in range(start_garb, target_idx):
-                        val = str(df.iloc[i][target_shift]).replace('.0', '').strip()
-                        if len(val) == 1: val = '0' + val
-                        if len(val) == 2: garbage.add(val)
+                    for i in range(max(0, target_idx - days_lookback), target_idx):
+                        v = get_val_str(df.iloc[i][shift_col])
+                        if v: recent_jodis.add(v)
 
-                    vip_jodis = []
-                    for a in top_a:
-                        for b in top_b:
-                            jodi = f"{a}{b}"
-                            if jodi not in garbage or jodi[0] in safe_digits or jodi[1] in safe_digits:
-                                vip_jodis.append(jodi)
-                                
                     final_jodis = []
-                    seen_combos = set()
-                    for j in vip_jodis:
-                        palti = f"{j[1]}{j[0]}"
-                        combo = "".join(sorted([j[0], j[1]]))
-                        if palti in vip_jodis and palti != j:
-                            if combo not in seen_combos:
-                                seen_combos.add(combo)
-                                if scores_a[j[0]] + scores_b[j[1]] >= scores_a[palti[0]] + scores_b[palti[1]]:
-                                    final_jodis.append(j)
-                                else:
-                                    final_jodis.append(palti)
-                        else:
-                            if j not in final_jodis: final_jodis.append(j)
-                            
-                    return final_jodis, len(active_rashi_links)
+                    action_taken = ""
+                    added_count = 0
+                    deleted_count = 0
+
+                    if is_repeat_trend:
+                        # TREND KEHTA HAI KI PURANE ANK AA SAKTE HAIN (ADD LOGIC)
+                        action_taken = "ADD (Repeat Phase)"
+                        final_jodis = list(set(base_jodis + list(recent_jodis)))
+                        added_count = len(recent_jodis)
+                    else:
+                        # TREND KEHTA HAI KI PURANE ANK DEAD HAIN (DELETE LOGIC)
+                        action_taken = "DELETE (Dead Phase)"
+                        for j in base_jodis:
+                            if j in recent_jodis:
+                                deleted_count += 1
+                            else:
+                                final_jodis.append(j)
+                        final_jodis = list(set(final_jodis))
+
+                    return final_jodis, action_taken, added_count, deleted_count
 
                 parikshan_date_str = df.iloc[idx_parikshan]['DATE'].strftime('%d-%m-%Y') if idx_parikshan is not None else "Data Pending"
                 
@@ -164,30 +164,30 @@ if uploaded_file is not None:
                         st.markdown(f"<div style='background-color:#f8f9fa; padding:15px; border-radius:10px; border:1px solid #ccc; margin-bottom:20px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);'>", unsafe_allow_html=True)
                         st.markdown(f"<h4 style='text-align:center; color:#e0245e;'>🎰 {shift}</h4>", unsafe_allow_html=True)
                         
-                        kal_val = str(df.iloc[idx_kal][shift]).replace('.0', '').strip()
-                        parikshan_val = str(df.iloc[idx_parikshan][shift]).replace('.0', '').strip() if idx_parikshan is not None else ""
-                        if len(parikshan_val) == 1 and parikshan_val.isdigit(): parikshan_val = '0' + parikshan_val
+                        kal_val = get_val_str(df.iloc[idx_kal][shift])
+                        parikshan_val = get_val_str(df.iloc[idx_parikshan][shift]) if idx_parikshan is not None else ""
                         
                         target_idx = idx_parikshan if idx_parikshan is not None else idx_kal + 1
                         
-                        final_vip_jodis, rashi_link_count = get_rashi_vip_jodis(target_idx, shift)
+                        final_vips, trend_action, add_c, del_c = apply_smart_decider(target_idx, shift)
                         
-                        st.write(f"**📥 Input (Kal):** {kal_val if kal_val not in ['nan', 'XX', ''] else '-'}")
-                        st.write(f"**🎯 Parikshan:** {parikshan_val if parikshan_val not in ['nan', 'XX', ''] else 'Pending'}")
+                        st.write(f"**📥 Input (Kal):** {kal_val if kal_val else '-'}")
+                        st.write(f"**🎯 Parikshan:** {parikshan_val if parikshan_val else 'Pending'}")
                         
-                        if rashi_link_count > 0:
-                            st.markdown(f"<div style='font-size:12px; color:#856404; background-color:#fff3cd; padding:5px; border-radius:5px; margin-bottom:10px;'>🔗 {rashi_link_count} Rashi/Same Chains Active</div>", unsafe_allow_html=True)
-                        else:
-                            st.markdown(f"<div style='font-size:12px; color:#155724; background-color:#d4edda; padding:5px; border-radius:5px; margin-bottom:10px;'>📊 Normal Trend Active</div>", unsafe_allow_html=True)
-                            
-                        if final_vip_jodis:
-                            if parikshan_val in final_vip_jodis:
-                                st.markdown(f"<div style='color:white; background-color:#28a745; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>✅ PASS! ({parikshan_val})</div>", unsafe_allow_html=True)
+                        # --- DYNAMIC DECIDER UI ---
+                        if trend_action == "ADD (Repeat Phase)":
+                            st.markdown(f"<div style='background-color:#cce5ff; color:#004085; padding:5px; border-radius:5px; font-size:13px; margin-bottom:10px; font-weight:bold;'>🔄 Trend: REPEAT<br>➕ {add_c} Pichle Ank Jode Gaye</div>", unsafe_allow_html=True)
+                        elif trend_action == "DELETE (Dead Phase)":
+                            st.markdown(f"<div style='background-color:#f8d7da; color:#721c24; padding:5px; border-radius:5px; font-size:13px; margin-bottom:10px; font-weight:bold;'>🚫 Trend: DEAD<br>🗑️ {del_c} Pichle Ank Delete Kiye</div>", unsafe_allow_html=True)
+                        
+                        if final_vips:
+                            if parikshan_val in final_vips:
+                                st.markdown(f"<div style='color:white; background-color:#28a745; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>✅ Pass! ({parikshan_val})</div>", unsafe_allow_html=True)
                             elif parikshan_val:
                                 st.markdown(f"<div style='color:white; background-color:#dc3545; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>❌ Miss</div>", unsafe_allow_html=True)
                                 
-                            st.write(f"**💎 Prediction ({len(final_vip_jodis)} Jodis):**")
-                            j_chunks = [final_vip_jodis[x:x+5] for x in range(0, len(final_vip_jodis), 5)]
+                            st.write(f"**💎 Final Jodis ({len(final_vips)}):**")
+                            j_chunks = [final_vips[x:x+5] for x in range(0, len(final_vips), 5)]
                             for chunk in j_chunks:
                                 st.code(" | ".join(chunk))
                         else:
@@ -196,7 +196,7 @@ if uploaded_file is not None:
                         st.markdown("</div>", unsafe_allow_html=True)
 
                 st.markdown("---")
-                st.subheader("📚 Pichle 11 Din Ka Strict Tracker (Sirf Paas Hone Par Hara Dabba)")
+                st.subheader("📚 Pichle 11 Din Ka Tracker (Trend Decider ke Aadhar Par)")
                 
                 def generate_html_table(history_slice):
                     html_table = '<table style="width:100%; text-align:center; border-collapse: collapse; font-size: 16px;">'
@@ -209,18 +209,20 @@ if uploaded_file is not None:
                         html_table += f'<td style="border:1px solid #ccc; padding:10px; font-weight:bold; background-color:#f8f9fa;">{row["DATE"].strftime("%d-%m-%Y")}</td>'
                         
                         for c in cols:
-                            actual_val = str(row[c]).replace('.0', '').strip()
-                            if len(actual_val) == 1 and actual_val.isdigit(): actual_val = '0' + actual_val
-                            if actual_val in ['nan', 'XX', '']:
+                            actual_val = get_val_str(row[c])
+                            if not actual_val:
                                 html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#aaa;">-</td>'
                                 continue
                                 
-                            h_final, _ = get_rashi_vip_jodis(row_idx, c)
+                            h_final, action, _, _ = apply_smart_decider(row_idx, c)
+                            
+                            # Chota indicator dikhane ke liye ki add kiya tha ya delete
+                            marker = "🔄" if action == "ADD (Repeat Phase)" else "🗑️"
                             
                             if actual_val in h_final:
-                                html_table += f'<td style="border:2px solid #1e7e34; padding:10px; background-color:#d4edda; color:#155724; font-weight:bold; font-size: 18px;">{actual_val} ✅</td>'
+                                html_table += f'<td style="border:2px solid #1e7e34; padding:10px; background-color:#d4edda; color:#155724; font-weight:bold; font-size: 18px;">{actual_val} ✅ {marker}</td>'
                             else:
-                                html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#333;">{actual_val}</td>'
+                                html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#333;">{actual_val} <span style="font-size:12px;">{marker}</span></td>'
                                 
                         html_table += '</tr>'
                     html_table += '</table>'
