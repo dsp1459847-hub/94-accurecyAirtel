@@ -4,8 +4,8 @@ from datetime import timedelta
 from collections import defaultdict
 
 st.set_page_config(layout="wide")
-st.title("MAYA AI: Cross-Shift Rashi Impact Engine (Fixed & Final)")
-st.write("Yeh engine Parso aur Kal ki saari shifton ko cross-match karke dekhta hai ki kahan Rashi khuli hai, aur uska Aaj ki shift par kya impact padega. (100% Error Free)")
+st.title("MAYA AI: Cross-Shift Rashi Impact Engine (100% Bug-Free)")
+st.write("Yeh engine Parso aur Kal ki saari shifton ko cross-match karke dekhta hai ki kahan Rashi khuli hai, aur uska Aaj ki shift par kya impact padega.")
 
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
@@ -53,16 +53,15 @@ if uploaded_file is not None:
         if idx_kal < 10:
             st.warning("Engine ko Rashi logic calculate karne ke liye kam se kam 10 din ki history chahiye.")
         else:
-            with st.spinner("MAYA AI Parso aur Kal ki saari shifton ka Rashi Connection dhoondh rahi hai..."):
+            with st.spinner("MAYA AI Parso aur Kal ki shifton ka Rashi Connection dhoondh rahi hai..."):
                 
-                # --- CORE ENGINE: CROSS-SHIFT RASHI LOGIC ---
                 def get_rashi_vip_jodis(target_idx, target_shift):
                     scores_a = {str(i): 0 for i in range(10)}
                     scores_b = {str(i): 0 for i in range(10)}
                     
                     active_rashi_links = []
                     
-                    # 1. FIND ACTIVE RASHI LINKS TODAY (Parso -> Kal)
+                    # 1. FIND ACTIVE RASHI LINKS (Parso -> Kal)
                     for c_parso in cols:
                         p_a, p_b = get_andar_bahar(df.iloc[target_idx-2][c_parso])
                         if not p_a: continue
@@ -89,7 +88,6 @@ if uploaded_file is not None:
                         
                         match_weight = 0
                         for link in active_rashi_links:
-                            # PROPER BRACKETS FIXED HERE (No more SyntaxError)
                             hp_a, hp_b = get_andar_bahar(df.iloci-2
                             hk_a, hk_b = get_andar_bahar(df.iloci-1
                             
