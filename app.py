@@ -1,11 +1,11 @@
 import pandas as pd
 import streamlit as st
 from datetime import timedelta
-from collections import defaultdict, Counter
+from collections import defaultdict
 
 st.set_page_config(layout="wide")
-st.title("MAYA AI: Rashi-Chain & 7-Day Eliminator Engine")
-st.write("Yeh engine 'Parso -> Kal' ki Rashi Chain check karta hai, aur pichle 5-7 din ke 'Kachra' (Altu-Faltu) ankon ko list se hamesha ke liye kaat deta hai.")
+st.title("MAYA AI: Cross-Shift Rashi Impact Engine")
+st.write("Yeh engine Parso aur Kal ki saari shifton ko cross-match karke dekhta hai ki kahan Rashi khuli hai, aur uska Aaj ki shift par kya impact padega.")
 
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
@@ -18,6 +18,7 @@ def get_andar_bahar(val):
     return None, None
 
 def get_rashi(d):
+    if not d: return None
     return str((int(d) + 5) % 10)
 
 if uploaded_file is not None:
@@ -49,115 +50,106 @@ if uploaded_file is not None:
         idx_kal = date_match.index[0]
         idx_parikshan = idx_kal + 1 if (idx_kal + 1) < len(df) else None
         
-        if idx_kal < 15:
-            st.warning("Engine ko calculate karne ke liye thodi aur history chahiye.")
+        if idx_kal < 10:
+            st.warning("Engine ko Rashi logic calculate karne ke liye kam se kam 10 din ki history chahiye.")
         else:
-            with st.spinner("MAYA AI Rashi-Chain aur 7-Day Elimination kar rahi hai..."):
+            with st.spinner("MAYA AI Parso aur Kal ki saari shifton ka Rashi Connection dhoondh rahi hai..."):
                 
-                # --- CORE 1: BASE MACRO/MICRO (Base Trend) ---
-                def get_base_36(target_idx, shift_col):
+                # --- CORE ENGINE: CROSS-SHIFT RASHI LOGIC ---
+                def get_rashi_vip_jodis(target_idx, target_shift):
                     scores_a = {str(i): 0 for i in range(10)}
                     scores_b = {str(i): 0 for i in range(10)}
                     
-                    m1_a, m1_b = get_andar_bahar(df.iloc[target_idx-1][shift_col])
-                    m2_a, m2_b = get_andar_bahar(df.iloc[target_idx-2][shift_col])
+                    active_rashi_links = []
                     
-                    if not m1_a: return []
-
-                    for i in range(2, target_idx):
-                        h_t_a, h_t_b = get_andar_bahar(df.iloc[i][shift_col])
-                        h_m1_a, h_m1_b = get_andar_bahar(df.iloc[i-1][shift_col])
-                        h_m2_a, h_m2_b = get_andar_bahar(df.iloc[i-2][shift_col])
+                    # 1. FIND ACTIVE RASHI LINKS TODAY (Parso -> Kal)
+                    # Check across ALL shifts
+                    for c_parso in cols:
+                        p_a, p_b = get_andar_bahar(df.iloc[target_idx-2][c_parso])
+                        if not p_a: continue
                         
-                        if h_t_a and h_t_b:
-                            if h_m1_a == m1_a: scores_a[h_t_a] += 2
-                            if h_m2_a == m2_a: scores_a[h_t_a] += 1
-                            if h_m1_b == m1_b: scores_b[h_t_b] += 2
-                            if h_m2_b == m2_b: scores_b[h_t_b] += 1
+                        p_a_rashi, p_b_rashi = get_rashi(p_a), get_rashi(p_b)
+                        
+                        for c_kal in cols:
+                            k_a, k_b = get_andar_bahar(df.iloc[target_idx-1][c_kal])
+                            if not k_a: continue
+                            
+                            # Check if Kal's Andar/Bahar is Rashi or Exact match of Parso's Andar/Bahar
+                            if k_a == p_a_rashi or k_a == p_a:
+                                active_rashi_links.append({'p_shift': c_parso, 'p_pos': 'A', 'k_shift': c_kal, 'k_pos': 'A', 'p_val': p_a})
+                            if k_b == p_a_rashi or k_b == p_a:
+                                active_rashi_links.append({'p_shift': c_parso, 'p_pos': 'A', 'k_shift': c_kal, 'k_pos': 'B', 'p_val': p_a})
+                            if k_a == p_b_rashi or k_a == p_b:
+                                active_rashi_links.append({'p_shift': c_parso, 'p_pos': 'B', 'k_shift': c_kal, 'k_pos': 'A', 'p_val': p_b})
+                            if k_b == p_b_rashi or k_b == p_b:
+                                active_rashi_links.append({'p_shift': c_parso, 'p_pos': 'B', 'k_shift': c_kal, 'k_pos': 'B', 'p_val': p_b})
 
+                    # 2. SCAN HISTORY FOR THESE EXACT LINKS
+                    # Agar aaj yeh links active hain, to history me jab-jab ye active hue the, tab Target Shift me kya aaya tha?
+                    for i in range(2, target_idx):
+                        act_a, act_b = get_andar_bahar(df.iloc[i][target_shift])
+                        if not act_a: continue
+                        
+                        match_weight = 0
+                        for link in active_rashi_links:
+                            # Read history for the specific Parso and Kal shifts
+                            hp_a, hp_b = get_andar_bahar(df.iloci-2
+                            hk_a, hk_b = get_andar_bahar(df.iloci-1
+                            
+                            if not (hp_a and hk_a): continue
+                            
+                            hp_val = hp_a if link['p_pos'] == 'A' else hp_b
+                            hk_val = hk_a if link['k_pos'] == 'A' else hk_b
+                            
+                            # If the same Rashi relationship happened in history
+                            if hk_val == get_rashi(hp_val) or hk_val == hp_val:
+                                # Weight logic: Agar same shift me hua hai to zyada power
+                                power = 3 if (link['p_shift'] == target_shift or link['k_shift'] == target_shift) else 1
+                                match_weight += power
+                                
+                        if match_weight > 0:
+                            scores_a[act_a] += match_weight
+                            scores_b[act_b] += match_weight
+
+                    # 3. SELECT TOP 6 (High Probability)
                     top_a = [x[0] for x in sorted(scores_a.items(), key=lambda x: x[1], reverse=True)[:6]]
                     top_b = [x[0] for x in sorted(scores_b.items(), key=lambda x: x[1], reverse=True)[:6]]
-                    return [f"{a}{b}" for a in top_a for b in top_b]
-
-                # --- CORE 2: RASHI CHAIN PREDICTOR (Parso -> Kal -> Aaj) ---
-                def get_rashi_chain_jodis(target_idx, shift_col):
-                    p_a, p_b = get_andar_bahar(df.iloc[target_idx-2][shift_col])
-                    k_a, k_b = get_andar_bahar(df.iloc[target_idx-1][shift_col])
                     
-                    if not (p_a and p_b and k_a and k_b): return [], False
+                    # 4. REMOVE 5-DAY GARBAGE (Kachra Hatao)
+                    # Par jo ank Parso ke the, unhe mat hatao (Kyunki Rashi wapas aa sakti hai)
+                    garbage = set()
+                    safe_digits = set([link['p_val'] for link in active_rashi_links] + [get_rashi(link['p_val']) for link in active_rashi_links])
                     
-                    rp_a, rp_b = get_rashi(p_a), get_rashi(p_b)
-                    
-                    # Kya Parso ki Rashi Kal mein aayi hai?
-                    rashi_chain_triggered = (rp_a in [k_a, k_b]) or (rp_b in [k_a, k_b])
-                    
-                    chain_jodis = []
-                    if rashi_chain_triggered:
-                        # Scan History: Jab bhi yeh specific chain banti hai, tab history mein kya khulta hai?
-                        hist_next_jodis = []
-                        for i in range(2, target_idx):
-                            hp_a, hp_b = get_andar_bahar(df.iloc[i-2][shift_col])
-                            hk_a, hk_b = get_andar_bahar(df.iloc[i-1][shift_col])
-                            
-                            if hp_a and hk_a:
-                                hrp_a, hrp_b = get_rashi(hp_a), get_rashi(hp_b)
-                                if (hrp_a in [hk_a, hk_b]) or (hrp_b in [hk_a, hk_b]):
-                                    # Chain matched in history! See what came next
-                                    act_val = str(df.iloc[i][shift_col]).replace('.0', '').strip()
-                                    if len(act_val) == 1: act_val = '0' + act_val
-                                    if len(act_val) == 2: hist_next_jodis.append(act_val)
-                                    
-                        if hist_next_jodis:
-                            # Take top 5 most historically accurate outcomes for this specific Rashi Chain
-                            top_outcomes = [item[0] for item in Counter(hist_next_jodis).most_common(5)]
-                            chain_jodis.extend(top_outcomes)
-                            
-                    return chain_jodis, rashi_chain_triggered
-
-                # --- CORE 3: THE ELIMINATOR (Kachra Hatao) ---
-                def apply_grand_filter(base_jodis, rashi_jodis, target_idx, shift_col):
-                    # 1. 7-DAY ELIMINATION RULE (Altu Faltu ank hatao)
-                    days_to_check = 7 if shift_col == 'DS' else 5
-                    garbage_jodis = set()
-                    
-                    for i in range(max(0, target_idx - days_to_check), target_idx):
-                        val = str(df.iloc[i][shift_col]).replace('.0', '').strip()
+                    for i in range(max(0, target_idx - 5), target_idx):
+                        val = str(df.iloc[i][target_shift]).replace('.0', '').strip()
                         if len(val) == 1: val = '0' + val
-                        if len(val) == 2: garbage_jodis.add(val)
-                    
-                    # Base Jodis me se Garbage hatao
-                    filtered_base = [j for j in base_jodis if j not in garbage_jodis]
-                    
-                    # 2. SMART PALTI ELIMINATION
-                    hist_counts = defaultdict(int)
-                    for i in range(target_idx):
-                        val = str(df.iloc[i][shift_col]).replace('.0', '').strip()
-                        if len(val) == 1: val = '0' + val
-                        if len(val) == 2: hist_counts[val] += 1
-                    
-                    final_list = []
+                        if len(val) == 2: garbage.add(val)
+
+                    vip_jodis = []
+                    for a in top_a:
+                        for b in top_b:
+                            jodi = f"{a}{b}"
+                            if jodi not in garbage or jodi[0] in safe_digits or jodi[1] in safe_digits:
+                                vip_jodis.append(jodi)
+                                
+                    # Drop exact Palties if history probability is very low
+                    final_jodis = []
                     seen_combos = set()
-                    
-                    for j in filtered_base:
+                    for j in vip_jodis:
                         palti = f"{j[1]}{j[0]}"
                         combo = "".join(sorted([j[0], j[1]]))
-                        
-                        if palti in filtered_base and palti != j:
+                        if palti in vip_jodis and palti != j:
                             if combo not in seen_combos:
                                 seen_combos.add(combo)
-                                # Jo Palti history me zyada aati hai sirf use rakho
-                                if hist_counts[j] > hist_counts[palti]: final_list.append(j)
-                                elif hist_counts[palti] > hist_counts[j]: final_list.append(palti)
-                                else: final_list.extend([j, palti])
+                                # Keep the one with higher combined score
+                                if scores_a[j[0]] + scores_b[j[1]] >= scores_a[palti[0]] + scores_b[palti[1]]:
+                                    final_jodis.append(j)
+                                else:
+                                    final_jodis.append(palti)
                         else:
-                            if j not in final_list: final_list.append(j)
-
-                    # 3. ADD RASHI CHAIN JODIS (Yeh sabse pakke hain, isliye inko eliminate nahi karna)
-                    for rj in rashi_jodis:
-                        if rj not in final_list:
-                            final_list.append(rj)
+                            if j not in final_list: final_jodis.append(j)
                             
-                    return final_list, list(garbage_jodis)
+                    return final_jodis, len(active_rashi_links)
 
                 # --- UI DISPLAY (ALL SHIFTS AT ONCE) ---
                 parikshan_date_str = df.iloc[idx_parikshan]['DATE'].strftime('%d-%m-%Y') if idx_parikshan is not None else "Data Pending"
@@ -178,29 +170,24 @@ if uploaded_file is not None:
                         
                         target_idx = idx_parikshan if idx_parikshan is not None else idx_kal + 1
                         
-                        # Execute Logic
-                        base_36 = get_base_36(target_idx, shift)
-                        rashi_chain_jodis, is_rashi_triggered = get_rashi_chain_jodis(target_idx, shift)
-                        final_vip, garbage_removed = apply_grand_filter(base_36, rashi_chain_jodis, target_idx, shift)
+                        final_vip_jodis, rashi_link_count = get_rashi_vip_jodis(target_idx, shift)
                         
                         st.write(f"**📥 Input (Kal):** {kal_val if kal_val not in ['nan', 'XX', ''] else '-'}")
                         st.write(f"**🎯 Parikshan:** {parikshan_val if parikshan_val not in ['nan', 'XX', ''] else 'Pending'}")
                         
-                        # Info Tags
-                        tags_html = ""
-                        if is_rashi_triggered:
-                            tags_html += f"<span style='background-color:#ffc107; color:black; padding:3px 6px; border-radius:4px; font-size:12px; font-weight:bold; margin-right:5px;'>🔗 Rashi Chain Active</span>"
-                        tags_html += f"<span style='background-color:#dc3545; color:white; padding:3px 6px; border-radius:4px; font-size:12px; font-weight:bold;'>🗑️ {len(garbage_removed)} Kachra Hata</span>"
-                        st.markdown(f"<div style='margin-bottom:10px;'>{tags_html}</div>", unsafe_allow_html=True)
-                        
-                        if final_vip:
-                            if parikshan_val in final_vip:
+                        if rashi_link_count > 0:
+                            st.markdown(f"<div style='font-size:12px; color:#856404; background-color:#fff3cd; padding:5px; border-radius:5px; margin-bottom:10px;'>🔗 {rashi_link_count} Rashi/Same-Ank Chains Active</div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"<div style='font-size:12px; color:#155724; background-color:#d4edda; padding:5px; border-radius:5px; margin-bottom:10px;'>📊 Normal Trend Active</div>", unsafe_allow_html=True)
+                            
+                        if final_vip_jodis:
+                            if parikshan_val in final_vip_jodis:
                                 st.markdown(f"<div style='color:white; background-color:#28a745; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>✅ PASS! ({parikshan_val})</div>", unsafe_allow_html=True)
-                            else:
+                            elif parikshan_val:
                                 st.markdown(f"<div style='color:white; background-color:#dc3545; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>❌ Miss</div>", unsafe_allow_html=True)
                                 
-                            st.write(f"**💎 High-Accuracy VIPs ({len(final_vip)} Jodis):**")
-                            j_chunks = [final_vip[x:x+5] for x in range(0, len(final_vip), 5)]
+                            st.write(f"**💎 Prediction ({len(final_vip_jodis)} Jodis):**")
+                            j_chunks = [final_vip_jodis[x:x+5] for x in range(0, len(final_vip_jodis), 5)]
                             for chunk in j_chunks:
                                 st.code(" | ".join(chunk))
                         else:
@@ -210,7 +197,7 @@ if uploaded_file is not None:
 
                 # --- 11-DAY HISTORY HTML TABLES ---
                 st.markdown("---")
-                st.subheader("📚 Pichle 11 Din Ka Strict Filter Tracker (Jo Paas Hua, Sirf Wahan Hara Dabba)")
+                st.subheader("📚 Pichle 11 Din Ka Strict Tracker (Sirf Paas Hone Par Hara Dabba)")
                 
                 def generate_html_table(history_slice):
                     html_table = '<table style="width:100%; text-align:center; border-collapse: collapse; font-size: 16px;">'
@@ -229,9 +216,7 @@ if uploaded_file is not None:
                                 html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#aaa;">-</td>'
                                 continue
                                 
-                            h_base = get_base_36(row_idx, c)
-                            h_rashi, _ = get_rashi_chain_jodis(row_idx, c)
-                            h_final, _ = apply_grand_filter(h_base, h_rashi, row_idx, c)
+                            h_final, _ = get_rashi_vip_jodis(row_idx, c)
                             
                             if actual_val in h_final:
                                 html_table += f'<td style="border:2px solid #1e7e34; padding:10px; background-color:#d4edda; color:#155724; font-weight:bold; font-size: 18px;">{actual_val} ✅</td>'
@@ -255,4 +240,4 @@ if uploaded_file is not None:
 
 else:
     st.info("Kripya engine chalane ke liye 0DSP0 sheet upload karein.")
-                    
+                        
