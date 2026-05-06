@@ -1,14 +1,14 @@
 import pandas as pd
 import streamlit as st
-from collections import Counter
+from collections import Counter, defaultdict
 
 st.set_page_config(layout="wide")
-st.title("MAYA AI: Historical Magnet & Pattern Scanner")
-st.write("Yeh engine kal ke 'Triggers' (Joda, Counting, Anchors) pakadta hai, aur pichle 7 saal ki history chhan kar wahi ank nikalta hai jo sach mein aate hain.")
+st.title("MAYA AI: Ultimate Mega-Merge Engine")
+st.write("Yeh engine saare patterns (Fixed Rule, Rashi, Joda, Counting, History Magnet) ko ek saath MERGE karke highest accuracy wale ank nikalta hai.")
 
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
-# --- HELPER FUNCTIONS ---
+# --- 1. HELPER & TRIGGER FUNCTIONS ---
 def get_val_str(val):
     if pd.isna(val): return ""
     val = str(val).replace('.0', '').strip()
@@ -17,27 +17,25 @@ def get_val_str(val):
     if len(val) >= 2 and val[:2].isdigit(): return val[:2]
     return ""
 
+def get_rashi(d): return str((int(d) + 5) % 10) if d else None
+def is_joda(val): return len(val) == 2 and val[0] == val[1]
+def is_counting(val):
+    if len(val) != 2: return False
+    return abs(int(val[1]) - int(val[0])) == 1
+
 def get_active_triggers(val):
-    triggers = []
-    if not val or len(val) != 2: return triggers
-    
-    # Trigger 1: Joda
-    if val[0] == val[1]: triggers.append("Joda")
-    
-    # Trigger 2 & 3: Counting
-    try:
-        diff = int(val[1]) - int(val[0])
-        if diff == 1: triggers.append("Sidhi Counting")
-        if diff == -1: triggers.append("Ulti Counting")
-    except:
-        pass
-        
-    # Trigger 4: Anchor Digits (0 se 9 tak)
-    triggers.append(f"Anchor_{val[0]}")
-    if val[0] != val[1]: # Taki double anchor na ho jaye
-        triggers.append(f"Anchor_{val[1]}")
-    
-    return triggers
+    trigs = set()
+    if not val or len(val) != 2: return trigs
+    if is_joda(val): trigs.add("Joda")
+    if is_counting(val): trigs.add("Counting")
+    trigs.add(f"Anchor_{val[0]}")
+    if val[0] != val[1]: trigs.add(f"Anchor_{val[1]}")
+    return trigs
+
+# Aapke fixed ank
+FIXED_MAP = {'0': ['3','8','9','5'], '1': ['4','9','3','6'], '2': ['7','5','0'], 
+             '3': ['0','9','5','8'], '4': ['1','9','6'], '5': ['0','3','8'],
+             '6': ['1','4','9'], '7': ['2','0','5'], '8': ['0','3','5'], '9': ['0','4','1']}
 
 if uploaded_file is not None:
     if uploaded_file.name.endswith('.csv'):
@@ -71,46 +69,79 @@ if uploaded_file is not None:
         if idx_kal < 10:
             st.warning("Data kam hai. Kam se kam 10 din ki history chahiye.")
         else:
-            with st.spinner("MAYA AI pichle 7 saal ka data chhan rahi hai..."):
+            with st.spinner("MAYA AI sabhi Patterns aur History ko Merge kar rahi hai..."):
                 
-                # --- CORE ENGINE: HISTORICAL MAGNET SCANNER ---
-                def run_magnet_scanner(target_idx, shift):
+                # --- CORE MEGA-MERGE ENGINE ---
+                def run_mega_merge_scanner(target_idx, shift):
                     val_kal = get_val_str(df.iloc[target_idx-1][shift])
                     if not val_kal or len(val_kal) != 2: return [], []
                     
+                    target_month = df.iloc[target_idx]['DATE'].month if target_idx < len(df) else sel_date_pd.month
+                    target_weekday = df.iloc[target_idx]['DATE'].weekday() if target_idx < len(df) else sel_date_pd.weekday()
+                    
                     active_triggers = get_active_triggers(val_kal)
-                    if not active_triggers: return [], []
                     
-                    outcomes = []
+                    # --- STEP 1: RULE BASED POOL (Fixed + Rashi) ---
+                    rule_pool = set()
+                    a, b = val_kal[0], val_kal[1]
                     
-                    # 7-Saal ki history scan karo
+                    # Fixed Logic
+                    p_a = FIXED_MAP.get(a, [a])
+                    p_b = FIXED_MAP.get(b, [b])
+                    for x in p_a:
+                        for y in p_b:
+                            rule_pool.add(f"{x}{y}")
+                            
+                    # Rashi Logic
+                    ra, rb = get_rashi(a), get_rashi(b)
+                    if ra and rb:
+                        rule_pool.update([f"{a}{rb}", f"{ra}{b}", f"{ra}{rb}"])
+                        
+                    # --- STEP 2: HISTORY MAGNET SCANNER ---
+                    history_scores = defaultdict(float)
+                    
                     for i in range(2, target_idx):
                         h_kal = get_val_str(df.iloc[i-1][shift])
                         if not h_kal or len(h_kal) != 2: continue
                         
                         h_trigs = get_active_triggers(h_kal)
-                        common_trigs = set(active_triggers).intersection(set(h_trigs))
+                        common_trigs = active_triggers.intersection(h_trigs)
                         
-                        # Agar history ke us din wahi pattern bana tha jo aaj bana hai
                         if common_trigs:
                             h_act = get_val_str(df.iloc[i][shift])
                             if h_act and len(h_act) == 2:
-                                # Weightage: Jitne zyada pattern match honge, utni power
-                                weight = len(common_trigs)
+                                # Score calculation
+                                pts = len(common_trigs)
                                 
-                                # Joda aur Counting wale match ko double power
-                                for ct in common_trigs:
-                                    if ct in ["Joda", "Sidhi Counting", "Ulti Counting"]:
-                                        weight += 2
-                                        
-                                outcomes.extend([h_act] * weight)
+                                # Mahina aur Din same hone par extra power (Seasonality)
+                                hist_date = df.iloc[i]['DATE']
+                                if hist_date.month == target_month: pts *= 1.5
+                                if hist_date.weekday() == target_weekday: pts *= 1.2
                                 
-                    # Sabse zyada baar aane wale Top 25 Ank uthao
-                    top_vips = [x[0] for x in Counter(outcomes).most_common(25)]
+                                history_scores[h_act] += pts
+                                
+                    # --- STEP 3: THE MASTER MERGE ---
+                    final_scores = defaultdict(float)
                     
-                    # Active triggers ka naam saaf karne ke liye
+                    # Pehle saare history numbers ko dalenge
+                    avg_hist_score = sum(history_scores.values()) / max(1, len(history_scores))
+                    
+                    for jodi, score in history_scores.items():
+                        final_scores[jodi] = score
+                        
+                    # Phir Rule pool wale numbers ko boost karenge
+                    for jodi in rule_pool:
+                        # Agar rule wala number history me bhi hai, to usko massive boost do!
+                        if jodi in final_scores:
+                            final_scores[jodi] += (avg_hist_score * 2.0)
+                        else:
+                            # Agar sirf rule me hai (history me nahi), tab bhi moderate score do
+                            final_scores[jodi] += (avg_hist_score * 0.8)
+                            
+                    # Sabse zyada score (Rules + History Combined) wale Top 25 Ank uthao
+                    top_vips = [x[0] for x in sorted(final_scores.items(), key=lambda x: x[1], reverse=True)[:30]]
+                    
                     clean_triggers = [t.replace("Anchor_", "Ank ") for t in active_triggers]
-                    
                     return top_vips, clean_triggers
 
                 # --- UI DISPLAY ---
@@ -122,29 +153,29 @@ if uploaded_file is not None:
                 
                 for i, shift in enumerate(cols):
                     with grid_cols[i % 3]:
-                        st.markdown(f"<div style='background-color:#f8f9fa; padding:15px; border-radius:10px; border:1px solid #ccc; margin-bottom:20px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);'>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='background-color:#f1f8ff; padding:15px; border-radius:10px; border:1px solid #cce5ff; margin-bottom:20px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);'>", unsafe_allow_html=True)
                         st.markdown(f"<h4 style='text-align:center; color:#e0245e;'>🎰 {shift}</h4>", unsafe_allow_html=True)
                         
                         kal_val = get_val_str(df.iloc[idx_kal][shift])
                         parikshan_val = get_val_str(df.iloc[idx_parikshan][shift]) if idx_parikshan is not None else ""
                         target_idx = idx_parikshan if idx_parikshan is not None else idx_kal + 1
                         
-                        final_vips, active_trigs = run_magnet_scanner(target_idx, shift)
+                        final_vips, active_trigs = run_mega_merge_scanner(target_idx, shift)
                         
                         st.write(f"**📥 Input (Kal):** {kal_val if kal_val else '-'}")
                         st.write(f"**🎯 Parikshan:** {parikshan_val if parikshan_val else 'Pending'}")
                         
                         if active_trigs:
                             trig_str = " + ".join(active_trigs)
-                            st.markdown(f"<div style='font-size:12px; color:#856404; background-color:#fff3cd; padding:5px; border-radius:5px; margin-bottom:10px;'>⚡ <b>Active Pattern:</b> {trig_str}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='font-size:12px; color:#004085; background-color:#cce5ff; padding:5px; border-radius:5px; margin-bottom:10px;'>🧩 <b>Merged Patterns:</b> {trig_str}</div>", unsafe_allow_html=True)
                             
                         if final_vips:
                             if parikshan_val in final_vips:
-                                st.markdown(f"<div style='color:white; background-color:#28a745; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>✅ PASS! ({parikshan_val})</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div style='color:white; background-color:#28a745; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>✅ MEGA PASS! ({parikshan_val})</div>", unsafe_allow_html=True)
                             elif parikshan_val:
                                 st.markdown(f"<div style='color:white; background-color:#dc3545; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>❌ Miss</div>", unsafe_allow_html=True)
                                 
-                            st.write(f"**💎 Prediction ({len(final_vips)} Jodis):**")
+                            st.write(f"**💎 Top Merged Prediction ({len(final_vips)} Jodis):**")
                             j_chunks = [final_vips[x:x+5] for x in range(0, len(final_vips), 5)]
                             for chunk in j_chunks:
                                 st.code(" | ".join(chunk))
@@ -154,7 +185,7 @@ if uploaded_file is not None:
                         st.markdown("</div>", unsafe_allow_html=True)
 
                 st.markdown("---")
-                st.subheader("📚 Pichle 11 Din Ka Tracker (Historical Magnet Scanner)")
+                st.subheader("📚 Pichle 11 Din Ka Tracker (Mega-Merge Engine)")
                 
                 def generate_html_table(history_slice):
                     html_table = '<table style="width:100%; text-align:center; border-collapse: collapse; font-size: 16px;">'
@@ -172,7 +203,7 @@ if uploaded_file is not None:
                                 html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#aaa;">-</td>'
                                 continue
                                 
-                            h_final, _ = run_magnet_scanner(row_idx, c)
+                            h_final, _ = run_mega_merge_scanner(row_idx, c)
                             
                             if actual_val in h_final:
                                 html_table += f'<td style="border:2px solid #1e7e34; padding:10px; background-color:#d4edda; color:#155724; font-weight:bold; font-size: 18px;">{actual_val} ✅</td>'
@@ -196,4 +227,4 @@ if uploaded_file is not None:
 
 else:
     st.info("Kripya engine chalane ke liye 0DSP0 sheet upload karein.")
-    
+                        
