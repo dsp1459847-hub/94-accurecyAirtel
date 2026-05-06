@@ -3,10 +3,25 @@ import streamlit as st
 from datetime import datetime
 
 st.set_page_config(layout="wide")
-st.title("MAYA AI: Andar-Bahar Split & Multi-Shift Master Engine")
-st.write("Yeh engine exactly aapke 'Andar-Bahar Splitting' aur 'Multi-Shift Combination' logic par kaam karta hai. Koi weightage nahi, sirf history ki absolute counting (100% Facts).")
+st.title("MAYA AI: Explicit Rule-Based Master Engine")
+st.write("Yeh engine aapke diye gaye 0-9 Rules aur Pichli History ko aapas mein cross-verify karke 100% factual combinations banata hai.")
 
-# 1. File Upload
+# ---------------------------------------------------------
+# 1. AAPKA RULE BOOK (Hardcoded Facts, No Guessing)
+# ---------------------------------------------------------
+USER_RULES = {
+    '0': ['8', '6', '7', '9', '3'],
+    '1': ['8', '4', '5', '7', '0'],
+    '2': ['9', '6', '5', '1', '4'],
+    '3': ['9', '6', '7', '2', '0'],
+    '4': ['3', '0', '1', '9', '8'],
+    '5': ['2', '1', '9', '3', '6'],
+    '6': ['0', '2', '9', '4', '5'],
+    '7': ['1', '0', '5', '7', '4'],
+    '8': ['4', '1', '3', '0', '7'],
+    '9': ['9', '3', '8', '5', '7']
+}
+
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
 def get_andar_bahar(val):
@@ -27,45 +42,14 @@ if uploaded_file is not None:
     df = df.sort_values('DATE').reset_index(drop=True)
     cols = ['DS', 'FD', 'GD', 'GL', 'DB', 'SG']
 
-    # 2. Date Selection
-    st.subheader("📅 Tareekh Chunein (Parikshan Ka Din)")
+    st.subheader("📅 Tareekh Chunein")
     max_date = df['DATE'].max().to_pydatetime()
     min_date = df['DATE'].min().to_pydatetime()
     
     selected_date = st.date_input("Jis din ka data check karna hai:", 
                                   value=max_date, min_value=min_date, max_value=max_date)
-    
     sel_date_pd = pd.to_datetime(selected_date)
 
-    # ---------------------------------------------------------
-    # 3. 3-WAY HISTORY LOGIC (Exactly 11 Din)
-    # ---------------------------------------------------------
-    st.markdown("---")
-    st.subheader("📚 3-Way History Data (10 Pichle Din + 1 Aaj = Total 11 Din)")
-    
-    df_seq = df[df['DATE'] <= sel_date_pd].tail(11).copy()
-    
-    target_weekday = sel_date_pd.weekday()
-    df_war = df[(df['DATE'] <= sel_date_pd) & (df['DATE'].dt.weekday == target_weekday)].tail(11).copy()
-    
-    target_day = sel_date_pd.day
-    df_tarikh = df[(df['DATE'] <= sel_date_pd) & (df['DATE'].dt.day == target_day)].tail(11).copy()
-
-    for d in [df_seq, df_war, df_tarikh]:
-        d['DATE'] = d['DATE'].dt.strftime('%d-%m-%Y')
-
-    tab1, tab2, tab3 = st.tabs(["1️⃣ Lagaatar (Seq) 11 Din", "2️⃣ War (Day) 11 Din", "3️⃣ Tareekh (Date) 11 Din"])
-    
-    with tab1:
-        st.dataframe(df_seq[['DATE'] + cols].reset_index(drop=True), use_container_width=True)
-    with tab2:
-        st.dataframe(df_war[['DATE'] + cols].reset_index(drop=True), use_container_width=True)
-    with tab3:
-        st.dataframe(df_tarikh[['DATE'] + cols].reset_index(drop=True), use_container_width=True)
-
-    # ---------------------------------------------------------
-    # 4. AUTO-FILL INPUTS
-    # ---------------------------------------------------------
     st.markdown("---")
     st.subheader("📊 Engine Input (Automatic Filled)")
     
@@ -83,80 +67,76 @@ if uploaded_file is not None:
 
     target_shift = st.selectbox("Aaj kis Shift ka VIP prediction nikalna hai?", cols)
 
-    if st.button("Run Exact Andar-Bahar Logic"):
+    if st.button("Run Exact Rule + History Combination"):
         andar_counts = {str(i): 0 for i in range(10)}
         bahar_counts = {str(i): 0 for i in range(10)}
         
-        todays_a_pool = set()
-        todays_b_pool = set()
+        input_digits_pool = set()
         
-        # Input se Andar aur Bahar ke Pool banana
+        # 1. Aaj ke aaye hue ankon ka pool nikalna
         for c in cols:
             if inputs[c]:
                 a, b = get_andar_bahar(inputs[c])
-                if a: todays_a_pool.add(a)
-                if b: todays_b_pool.add(b)
+                if a: input_digits_pool.add(a)
+                if b: input_digits_pool.add(b)
                 
+        # 2. RULE ENGINE: Aaj ke ankon ke hisab se kal kya aana chahiye (Aapka Rule)
+        rule_expected_targets = set()
+        for d in input_digits_pool:
+            if d in USER_RULES:
+                rule_expected_targets.update(USER_RULES[d])
+
         total_history_events_matched = 0
 
-        # Poori History Mein Loop (i aur i+1 lock)
+        # 3. HISTORY SCAN: Pichli history mein jab yeh ank aaye, toh sach mein kya khula?
         for i in range(len(df) - 1):
             day_has_match = False
             
-            # -- STEP 2 LOGIC: Single Shift Tracking --
-            # "Agar aaj Andar mein '0' aaya hai, toh kal kya aayega"
             for c in cols:
                 if not inputs[c]: continue
                 inp_a, inp_b = get_andar_bahar(inputs[c])
                 hist_a, hist_b = get_andar_bahar(df.iloc[i][c])
                 
-                # Agar kisi shift ka exactly Andar ya Bahar match hota hai
+                # Agar input ka exact Andar ya Bahar kisi shift se match hota hai
                 if (inp_a and hist_a == inp_a) or (inp_b and hist_b == inp_b):
                     day_has_match = True
 
-            # -- STEP 3 LOGIC: Multi-Shift Combinations --
-            # "Jab Andar me (1,9) aur Bahar me (5,0) saath mein aaye the"
-            hist_a_pool = set()
-            hist_b_pool = set()
-            for c in cols:
-                ha, hb = get_andar_bahar(df.iloc[i][c])
-                if ha: hist_a_pool.add(ha)
-                if hb: hist_b_pool.add(hb)
-                
-            # Agar aaj ke Pool ka zyada hissa history ke is din se match khata hai
-            match_a = len(todays_a_pool.intersection(hist_a_pool))
-            match_b = len(todays_b_pool.intersection(hist_b_pool))
-            
-            # Agar pool combination milta hai ya single shift match milti hai
-            if day_has_match or (match_a >= 2 and match_b >= 2):
+            if day_has_match:
                 tom_a, tom_b = get_andar_bahar(df.iloc[i+1][target_shift])
-                
                 if tom_a and tom_b:
-                    # Dono ko alag-alag pure counting mein add kiya gaya (+1 each time it happens in reality)
                     andar_counts[tom_a] += 1
                     bahar_counts[tom_b] += 1
                     total_history_events_matched += 1
                     
-        # Sort Karke Sabse Zyada Aane Wale Ank Nikalna
+        # History Counts ko sort karna
         res_a = sorted(andar_counts.items(), key=lambda x: x[1], reverse=True)
         res_b = sorted(bahar_counts.items(), key=lambda x: x[1], reverse=True)
         
+        # 4. CROSS-CHECK COMBINATION: History aur Rule ko mila kar filter karna
+        super_vip_andar = [x for x in res_a if x[0] in rule_expected_targets and x[1] > 0]
+        normal_andar = [x for x in res_a if x[0] not in rule_expected_targets and x[1] > 0]
+        
+        super_vip_bahar = [x for x in res_b if x[0] in rule_expected_targets and x[1] > 0]
+        normal_bahar = [x for x in res_b if x[0] not in rule_expected_targets and x[1] > 0]
+        
         st.write(f"---")
-        st.info(f"Pichli poori history check karne par **{total_history_events_matched}** aise exact pattern mile jahan yahi Andar-Bahar combination khule the.")
+        st.info(f"💡 **RULE VERIFICATION:** Aapke Input ({', '.join(input_digits_pool)}) ke hisaab se kal yeh ank aane chahiye: **{', '.join(rule_expected_targets)}**")
+        st.info(f"📊 **HISTORY VERIFICATION:** Pichli history mein in ankon ne **{total_history_events_matched}** baar target shift par asar dala hai.")
+        
+        st.markdown("### 🔥 Final Crossed Combinations (Rule + Fact)")
         
         col1, col2 = st.columns(2)
         with col1:
-            st.success(f"🔥 **Agle Din ANDAR mein sabse zyada aane wale ank:**")
-            st.write(f"1. [{res_a[0][0]}] (Aaya: {res_a[0][1]} baar)")
-            st.write(f"2. [{res_a[1][0]}] (Aaya: {res_a[1][1]} baar)")
-            st.write(f"3. [{res_a[2][0]}] (Aaya: {res_a[2][1]} baar)")
-        
+            st.success("🎯 **SUPER VIP ANDAR** (Rule me bhi paas + History me bhi paas)")
+            for val, count in super_vip_andar[:3]:
+                st.write(f"**[{val}]** - (History mein {count} baar aaya)")
+            
+            st.warning("✔️ **Normal Andar** (Sirf History me aaya, par aapke Rule me nahi)")
+            for val, count in normal_andar[:2]:
+                st.write(f"[{val}] - ({count} baar)")
+                
         with col2:
-            st.success(f"🔥 **Agle Din BAHAR mein sabse zyada aane wale ank:**")
-            st.write(f"1. [{res_b[0][0]}] (Aaya: {res_b[0][1]} baar)")
-            st.write(f"2. [{res_b[1][0]}] (Aaya: {res_b[1][1]} baar)")
-            st.write(f"3. [{res_b[2][0]}] (Aaya: {res_b[2][1]} baar)")
-
-else:
-    st.info("Kripya engine chalane ke liye 0DSP0 sheet upload karein.")
-    
+            st.success("🎯 **SUPER VIP BAHAR** (Rule me bhi paas + History me bhi paas)")
+            for val, count in super_vip_bahar[:3]:
+                st.write(f"**[{val}]** - (History mein {count} baar aaya)")
+                
