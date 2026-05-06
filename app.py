@@ -1,10 +1,11 @@
 import pandas as pd
 import streamlit as st
+from datetime import datetime
 
-st.title("MAYA AI: 100% Pure Fact-Based History Engine")
-st.write("Yeh engine kisi bhi ank ko apni taraf se koi 'point' ya 'weight' nahi deta. Yeh sirf history mein sach mein khule hue ankon ko ginta hai.")
+st.set_page_config(layout="wide")
+st.title("MAYA AI: 3-Way History & Rule Master Engine")
 
-# 1. File Upload lagana taaki seedha cloud par chal sake
+# 1. File Upload
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
 def get_andar_bahar(val):
@@ -15,7 +16,6 @@ def get_andar_bahar(val):
     return None, None
 
 if uploaded_file is not None:
-    # Dashboard sheet bypass karke seedha numerical data read karna
     if uploaded_file.name.endswith('.csv'):
         df = pd.read_csv(uploaded_file)
     else:
@@ -23,77 +23,136 @@ if uploaded_file is not None:
         
     df = df.dropna(subset=['DATE'])
     df['DATE'] = pd.to_datetime(df['DATE'])
-    # Chronological sort taaki same-day data fluctuation na ho
     df = df.sort_values('DATE').reset_index(drop=True)
     cols = ['DS', 'FD', 'GD', 'GL', 'DB', 'SG']
 
-    st.subheader("Kal ki shifts mein kya aaya? (Input)")
+    # 2. Date Selection
+    st.subheader("📅 Tareekh Chunein (Parikshan Ka Din)")
+    max_date = df['DATE'].max().to_pydatetime()
+    min_date = df['DATE'].min().to_pydatetime()
+    
+    selected_date = st.date_input("Jis din ka data uthana aur check karna hai:", 
+                                  value=max_date, min_value=min_date, max_value=max_date)
+    
+    sel_date_pd = pd.to_datetime(selected_date)
+
+    # ---------------------------------------------------------
+    # 3. 3-WAY HISTORY LOGIC (11 Din Ki List)
+    # ---------------------------------------------------------
+    st.markdown("---")
+    st.subheader("📚 3-Way History Data (10 Pichle Din + 1 Aaj = Total 11 Din)")
+    
+    # A. Lagaatar History (Last 11 Days ending on selected date)
+    df_seq = df[df['DATE'] <= sel_date_pd].tail(11).copy()
+    
+    # B. War (Day of Week) History
+    target_weekday = sel_date_pd.weekday()
+    df_war = df[(df['DATE'] <= sel_date_pd) & (df['DATE'].dt.weekday == target_weekday)].tail(11).copy()
+    
+    # C. Tareekh (Date) History
+    target_day = sel_date_pd.day
+    df_tarikh = df[(df['DATE'] <= sel_date_pd) & (df['DATE'].dt.day == target_day)].tail(11).copy()
+
+    # Formating dates for display
+    for d in [df_seq, df_war, df_tarikh]:
+        d['DATE'] = d['DATE'].dt.strftime('%d-%m-%Y')
+
+    # Streamlit Tabs banaye hain taaki screen saaf rahe
+    tab1, tab2, tab3 = st.tabs(["1️⃣ Lagaatar (Seq) 11 Din", "2️⃣ War (Day) 11 Din", "3️⃣ Tareekh (Date) 11 Din"])
+    
+    with tab1:
+        st.write("Aaj aur pichle 10 lagataar dino ki history:")
+        st.dataframe(df_seq[['DATE'] + cols].reset_index(drop=True), use_container_width=True)
+        
+    with tab2:
+        war_name = sel_date_pd.strftime('%A')
+        st.write(f"Aaj aur pichle 10 **{war_name}** ki history:")
+        st.dataframe(df_war[['DATE'] + cols].reset_index(drop=True), use_container_width=True)
+        
+    with tab3:
+        st.write(f"Aaj aur pichle 10 mahino ki **{target_day} tareekh** ki history:")
+        st.dataframe(df_tarikh[['DATE'] + cols].reset_index(drop=True), use_container_width=True)
+
+    # ---------------------------------------------------------
+    # 4. AUTO-FILL INPUTS & RULE ENGINE
+    # ---------------------------------------------------------
+    st.markdown("---")
+    st.subheader("📊 Engine Input (Automatic Filled)")
+    
+    day_data = df[df['DATE'] == sel_date_pd]
     inputs = {}
-    for c in cols:
-        inputs[c] = st.text_input(f"Kal {c} mein kya aaya?", key=c)
+    
+    if not day_data.empty:
+        grid = st.columns(3)
+        for idx, c in enumerate(cols):
+            val = str(day_data.iloc[0][c]) if c in day_data.columns else ""
+            if val == 'nan' or val == 'XX': val = ""
+            inputs[c] = grid[idx % 3].text_input(f"{c} Result:", value=val, key=f"inp_{c}")
+    else:
+        st.error("Is tareekh ka data sheet mein nahi mila.")
 
     target_shift = st.selectbox("Aaj kis Shift ka VIP prediction dekhna hai?", cols)
 
-    if st.button("Pure Backtest Run Karein"):
-        # Counters for exact historical matches
+    if st.button("Run Rule-Applied Backtest"):
         andar_counts = {str(i): 0 for i in range(10)}
         bahar_counts = {str(i): 0 for i in range(10)}
+        total_matches = 0
         
-        total_historical_days_checked = 0
+        # Rule Engine Target
+        rule_expected_targets = set()
+        for c in cols:
+            if inputs[c]:
+                a, b = get_andar_bahar(inputs[c])
+                if a or b:
+                    pool = [a, b]
+                    if '0' in pool: rule_expected_targets.update(['5', '9', '8', '3'])
+                    if '1' in pool: rule_expected_targets.add('3')
+                    if '8' in pool: rule_expected_targets.add('0')
+                    if '9' in pool: rule_expected_targets.add('0')
+                    if '3' in pool: rule_expected_targets.add('0')
         
-        # Poori history mein loop chalayenge (i aur i+1 lock ke sath)
         for i in range(len(df) - 1):
-            day_matched = False
-            
-            # Check history ke us din mein kya wo ank aaye the jo aapne kal ke liye input kiye hain
+            match_score = 0
             for c in cols:
                 if inputs[c]:
                     inp_a, inp_b = get_andar_bahar(inputs[c])
                     hist_a, hist_b = get_andar_bahar(df.iloc[i][c])
-                    
                     if inp_a and inp_b and hist_a and hist_b:
-                        # Strict Cross-Check: Koi Tukka nahi, sirf exact match
                         if hist_a == inp_a or hist_b == inp_b:
-                            day_matched = True
-                            
-            # Agar purani history mein match mila, toh exactly uske 'agle din' target shift mein kya khula tha
-            if day_matched:
+                            match_score += 1
+            
+            if match_score > 0:
                 tom_target_a, tom_target_b = get_andar_bahar(df.iloc[i+1][target_shift])
                 if tom_target_a and tom_target_b:
-                    andar_counts[tom_target_a] += 1  # Sirf raw sachai ki ginti (+1)
-                    bahar_counts[tom_target_b] += 1
-                    total_historical_days_checked += 1
+                    weight_a = 10 if tom_target_a in rule_expected_targets else 1
+                    weight_b = 10 if tom_target_b in rule_expected_targets else 1
                     
-        # Result ko ginti (count) ke hisaab se dikhana
-        sorted_andar = sorted(andar_counts.items(), key=lambda x: x[1], reverse=True)
-        sorted_bahar = sorted(bahar_counts.items(), key=lambda x: x[1], reverse=True)
+                    andar_counts[tom_target_a] += weight_a
+                    bahar_counts[tom_target_b] += weight_b
+                    total_matches += 1
+                    
+        res_a = sorted(andar_counts.items(), key=lambda x: x[1], reverse=True)
+        res_b = sorted(bahar_counts.items(), key=lambda x: x[1], reverse=True)
         
-        st.write(f"**Pichli poori history mein aise {total_historical_days_checked} din mile jab bilkul yahi patterns the.**")
-        st.write(f"### Jab-jab yeh hua, toh agle din {target_shift} mein EXACTLY yeh khula:")
+        st.write(f"---")
+        st.info(f"History mein {total_matches} dino ki matching hui aur rules automatically apply kiye gaye.")
         
-        st.success(f"🔥 **100% History Verified (Sabse zyada aaya):** Andar [{sorted_andar[0][0]}] ({sorted_andar[0][1]} baar) | Bahar [{sorted_bahar[0][0]}] ({sorted_bahar[0][1]} baar)")
+        if rule_expected_targets:
+            st.write(f"🎯 **Rules ne in ankon ko automatic target kiya:** {', '.join(rule_expected_targets)}")
         
-        st.info(f"⭐ **2nd Highest Truth:** Andar [{sorted_andar[1][0]}] ({sorted_andar[1][1]} baar) | Bahar [{sorted_bahar[1][0]}] ({sorted_bahar[1][1]} baar)")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.success(f"🔥 **Rule-Applied Top Andar:**")
+            st.write(f"1. [{res_a[0][0]}] (Score: {res_a[0][1]})")
+            st.write(f"2. [{res_a[1][0]}] (Score: {res_a[1][1]})")
+            st.write(f"3. [{res_a[2][0]}] (Score: {res_a[2][1]})")
         
-        st.warning(f"✔️ **3rd Highest Truth:** Andar [{sorted_andar[2][0]}] ({sorted_andar[2][1]} baar) | Bahar [{sorted_bahar[2][0]}] ({sorted_bahar[2][1]} baar)")
-        
-        # User ke personal rules ka validation reminder
-        st.markdown("---")
-        st.subheader("Aapke Rules vs Reality Check:")
-        rule_texts = []
-        for c in cols:
-            if inputs[c]:
-                a, b = get_andar_bahar(inputs[c])
-                if '0' in (a, b): rule_texts.append("Aapne 0 dala hai. Rule Check: 0 aane par 5, 9, 8, 3 aana chahiye.")
-                if '1' in (a, b): rule_texts.append("Aapne 1 dala hai. Rule Check: 1 aane par 3 aana chahiye.")
-                if '3' in (a, b): rule_texts.append("Aapne 3 dala hai. Rule Check: 3 ke sath 3 aane par 0 aana chahiye.")
-                if '8' in (a, b): rule_texts.append("Aapne 8 dala hai. Rule Check: 8 aane par 0 aana chahiye.")
-                if '9' in (a, b): rule_texts.append("Aapne 9 dala hai. Rule Check: 9 aane par 0 aana chahiye.")
-        
-        for r in list(set(rule_texts)):
-            st.write("- " + r)
-        st.write("Aap khud history ki is absolute counting ko dekh kar apna rule verify kar sakte hain ki kaunsa pattern aaj 100% fail-proof baith raha hai.")
+        with col2:
+            st.success(f"🔥 **Rule-Applied Top Bahar:**")
+            st.write(f"1. [{res_b[0][0]}] (Score: {res_b[0][1]})")
+            st.write(f"2. [{res_b[1][0]}] (Score: {res_b[1][1]})")
+            st.write(f"3. [{res_b[2][0]}] (Score: {res_b[2][1]})")
 
 else:
-    st.info("Kripya engine chalane ke liye upar apni Excel/CSV file upload karein.")
-    
+    st.info("Kripya 0DSP0 sheet upload karein.")
+                    
