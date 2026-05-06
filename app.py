@@ -5,7 +5,7 @@ from collections import defaultdict
 
 st.set_page_config(layout="wide")
 st.title("MAYA AI: Cross-Shift Rashi Impact Engine")
-st.write("Yeh engine Parso aur Kal ki shifton ko cross-match karke Rashi Impact nikalta hai. (100% Cache Cleared & Fixed)")
+st.write("Yeh engine Parso aur Kal ki shifton ko cross-match karke Rashi Impact nikalta hai.")
 
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
@@ -62,14 +62,17 @@ if uploaded_file is not None:
                     active_rashi_links = []
                     
                     for c_parso in cols:
-                        p_a, p_b = get_andar_bahar(df.iloc[target_idx-2][c_parso])
+                        # SIMPLE VARIABLES USE KIYE HAIN COPY-PASTE ERROR SE BACHNE KE LIYE
+                        row_parso_main = target_idx - 2
+                        p_a, p_b = get_andar_bahar(df.iloc[row_parso_main][c_parso])
                         if not p_a: continue
                         
                         p_a_rashi = get_rashi(p_a)
                         p_b_rashi = get_rashi(p_b)
                         
                         for c_kal in cols:
-                            k_a, k_b = get_andar_bahar(df.iloc[target_idx-1][c_kal])
+                            row_kal_main = target_idx - 1
+                            k_a, k_b = get_andar_bahar(df.iloc[row_kal_main][c_kal])
                             if not k_a: continue
                             
                             if k_a == p_a_rashi or k_a == p_a:
@@ -87,9 +90,14 @@ if uploaded_file is not None:
                         
                         match_weight = 0
                         for link in active_rashi_links:
-                            # PROPER BRACKETS ARE PLACED HERE
-                            hp_a, hp_b = get_andar_bahar(df.iloci-2
-                            hk_a, hk_b = get_andar_bahar(df.iloci-1
+                            # ⚠️ YAHAN MAIN CHANGES KIYE HAIN TAaki BRACKETS NA UDEIN ⚠️
+                            hist_row_parso = i - 2
+                            hist_row_kal = i - 1
+                            shift_p = link['p_shift']
+                            shift_k = link['k_shift']
+                            
+                            hp_a, hp_b = get_andar_bahar(df.iloc[hist_row_parso][shift_p])
+                            hk_a, hk_b = get_andar_bahar(df.iloc[hist_row_kal][shift_k])
                             
                             if not (hp_a and hk_a): continue
                             
@@ -97,7 +105,7 @@ if uploaded_file is not None:
                             hk_val = hk_a if link['k_pos'] == 'A' else hk_b
                             
                             if hk_val == get_rashi(hp_val) or hk_val == hp_val:
-                                power = 3 if (link['p_shift'] == target_shift or link['k_shift'] == target_shift) else 1
+                                power = 3 if (shift_p == target_shift or shift_k == target_shift) else 1
                                 match_weight += power
                                 
                         if match_weight > 0:
@@ -113,7 +121,9 @@ if uploaded_file is not None:
                         safe_digits.add(link['p_val'])
                         safe_digits.add(get_rashi(link['p_val']))
                     
-                    for i in range(max(0, target_idx - 5), target_idx):
+                    # Garbage collection logic
+                    start_garb = max(0, target_idx - 5)
+                    for i in range(start_garb, target_idx):
                         val = str(df.iloc[i][target_shift]).replace('.0', '').strip()
                         if len(val) == 1: val = '0' + val
                         if len(val) == 2: garbage.add(val)
@@ -229,4 +239,4 @@ if uploaded_file is not None:
 
 else:
     st.info("Kripya engine chalane ke liye 0DSP0 sheet upload karein.")
-                          
+    
