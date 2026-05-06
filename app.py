@@ -1,11 +1,11 @@
 import pandas as pd
 import streamlit as st
 from datetime import timedelta
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 st.set_page_config(layout="wide")
-st.title("MAYA AI: Macro-Micro Probability Engine (Super VIP/VIP/Normal)")
-st.write("Yeh engine Pichle 2 Din (Macro) aur Pichli 2 Shiften (Micro) cross karke sabse high probability nikalta hai aur 36 Jodis ko 3 hisson me baant-ta hai.")
+st.title("MAYA AI: Double Palti Killer & +1/-1 Proximity Engine")
+st.write("Yeh engine bekar Palti aur Rashi ankon ko JAD SE kaat deta hai, aur history ke error (+1/-1) ko pehchan kar naye solid ank add karta hai.")
 
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
@@ -16,6 +16,9 @@ def get_andar_bahar(val):
     if len(val) == 1 and val.isdigit(): val = '0' + val
     if len(val) >= 2 and val[:2].isdigit(): return val[0], val[1]
     return None, None
+
+def is_rashi(jodi):
+    return abs(int(jodi[0]) - int(jodi[1])) == 5
 
 if uploaded_file is not None:
     if uploaded_file.name.endswith('.csv'):
@@ -45,99 +48,112 @@ if uploaded_file is not None:
     else:
         idx_kal = date_match.index[0]
         idx_parikshan = idx_kal + 1 if (idx_kal + 1) < len(df) else None
+        parikshan_date = sel_date_pd + pd.Timedelta(days=1)
         
-        if idx_kal < 5:
-            st.warning("Engine ko calculate karne ke liye kam se kam 5 din ka purana data chahiye.")
+        if idx_kal < 30:
+            st.warning("Engine ko +1/-1 Proximity calculate karne ke liye kam se kam 30 din ka data chahiye.")
         else:
-            with st.spinner("MAYA AI Pichli Shiften aur Pichle Din cross-verify kar rahi hai..."):
+            with st.spinner("MAYA AI Palti/Rashi kaat rahi hai aur +1/-1 history scan kar rahi hai..."):
                 
-                # Pre-calculate Global Shift Sequence for Micro Trend
-                flat_shifts = []
-                for i in range(len(df)):
-                    for c_idx, c_name in enumerate(cols):
-                        val = df.iloc[i][c_name]
-                        a, b = get_andar_bahar(val)
-                        flat_shifts.append({'row': i, 'col': c_idx, 'col_name': c_name, 'a': a, 'b': b})
-                        
-                def get_flat_idx(r, c): return r * 6 + c
-
-                def calculate_vip_jodis(target_row_idx, target_col_name):
-                    target_col_idx = cols.index(target_col_name)
-                    target_flat_idx = get_flat_idx(target_row_idx, target_col_idx)
-                    
-                    if target_flat_idx < 12: return [], [], [] # Not enough history
-                    
-                    # 1. GET ACTUAL VALUES FOR MACRO & MICRO
-                    # Macro: Pichla Din aur Usse Pichla Din (Same Shift)
-                    macro_1_a, macro_1_b = get_andar_bahar(df.iloc[target_row_idx-1][target_col_name]) if target_row_idx-1 >=0 else (None, None)
-                    macro_2_a, macro_2_b = get_andar_bahar(df.iloc[target_row_idx-2][target_col_name]) if target_row_idx-2 >=0 else (None, None)
-                    
-                    # Micro: Pichli Shift aur Usse Pichli Shift (Chronological)
-                    prev_1 = flat_shifts[target_flat_idx - 1]
-                    prev_2 = flat_shifts[target_flat_idx - 2]
-                    micro_1_a, micro_1_b = prev_1['a'], prev_1['b']
-                    micro_2_a, micro_2_b = prev_2['a'], prev_2['b']
-                    
-                    if not (macro_1_a and micro_1_a): return [], [], []
-
-                    # 2. SCAN HISTORY TO BUILD PROBABILITY SCORES
+                # --- CORE 1: BASE 36 JODIS ---
+                def get_base_36_jodis(target_idx, shift_col):
                     scores_a = {str(i): 0 for i in range(10)}
                     scores_b = {str(i): 0 for i in range(10)}
                     
-                    for i in range(2, target_row_idx):
-                        hist_flat_idx = get_flat_idx(i, target_col_idx)
-                        h_target_a, h_target_b = flat_shifts[hist_flat_idx]['a'], flat_shifts[hist_flat_idx]['b']
-                        
-                        if not (h_target_a and h_target_b): continue
-                        
-                        # Check History Macro
-                        h_m1_a, _ = get_andar_bahar(df.iloc[i-1][target_col_name])
-                        h_m2_a, _ = get_andar_bahar(df.iloc[i-2][target_col_name])
-                        # Check History Micro
-                        h_mi1_a = flat_shifts[hist_flat_idx - 1]['a']
-                        h_mi2_a = flat_shifts[hist_flat_idx - 2]['a']
-                        
-                        # Add Weighted Points for Andar
-                        if h_m1_a == macro_1_a: scores_a[h_target_a] += 3  # High priority (Day-1)
-                        if h_m2_a == macro_2_a: scores_a[h_target_a] += 1  # Low priority (Day-2)
-                        if h_mi1_a == micro_1_a: scores_a[h_target_a] += 2 # Med priority (Shift-1)
-                        if h_mi2_a == micro_2_a: scores_a[h_target_a] += 1 # Low priority (Shift-2)
+                    m1_a, m1_b = get_andar_bahar(df.iloc[target_idx-1][shift_col])
+                    m2_a, m2_b = get_andar_bahar(df.iloc[target_idx-2][shift_col])
+                    
+                    if not m1_a: return []
 
-                        # Check History Macro (Bahar)
-                        _, h_m1_b = get_andar_bahar(df.iloc[i-1][target_col_name])
-                        _, h_m2_b = get_andar_bahar(df.iloc[i-2][target_col_name])
-                        # Check History Micro (Bahar)
-                        h_mi1_b = flat_shifts[hist_flat_idx - 1]['b']
-                        h_mi2_b = flat_shifts[hist_flat_idx - 2]['b']
+                    for i in range(2, target_idx):
+                        h_t_a, h_t_b = get_andar_bahar(df.iloc[i][shift_col])
+                        h_m1_a, h_m1_b = get_andar_bahar(df.iloc[i-1][shift_col])
+                        h_m2_a, h_m2_b = get_andar_bahar(df.iloc[i-2][shift_col])
                         
-                        # Add Weighted Points for Bahar
-                        if h_m1_b == macro_1_b: scores_b[h_target_b] += 3
-                        if h_m2_b == macro_2_b: scores_b[h_target_b] += 1
-                        if h_mi1_b == micro_1_b: scores_b[h_target_b] += 2
-                        if h_mi2_b == micro_2_b: scores_b[h_target_b] += 1
+                        if h_t_a and h_t_b:
+                            if h_m1_a == m1_a: scores_a[h_t_a] += 2
+                            if h_m2_a == m2_a: scores_a[h_t_a] += 1
+                            if h_m1_b == m1_b: scores_b[h_t_b] += 2
+                            if h_m2_b == m2_b: scores_b[h_t_b] += 1
 
-                    # 3. SELECT TOP 6 ANDAR & BAHAR
                     top_a = [x[0] for x in sorted(scores_a.items(), key=lambda x: x[1], reverse=True)[:6]]
                     top_b = [x[0] for x in sorted(scores_b.items(), key=lambda x: x[1], reverse=True)[:6]]
                     
-                    # 4. TIERING (SUPER VIP, VIP, NORMAL)
-                    super_vip = [] # Top 2 x Top 2 = 4 Jodis
-                    vip = []       # Next crosses = 12 Jodis
-                    normal = []    # Remaining = 20 Jodis
-                    
-                    for a_idx, a in enumerate(top_a):
-                        for b_idx, b in enumerate(top_b):
-                            jodi = f"{a}{b}"
-                            if a_idx < 2 and b_idx < 2:
-                                super_vip.append(jodi)
-                            elif a_idx < 4 and b_idx < 4:
-                                vip.append(jodi)
-                            else:
-                                normal.append(jodi)
-                                
-                    return super_vip, vip, normal
+                    return [f"{a}{b}" for a in top_a for b in top_b]
 
-                # --- 3. UI DISPLAY (ALL SHIFTS AT ONCE) ---
+                # --- CORE 2: ELIMINATOR & PROXIMITY (+1/-1) ADDER ---
+                def apply_grandmaster_logic(jodi_list, target_idx, shift_col):
+                    # History Frequencies
+                    hist_counts = defaultdict(int)
+                    for i in range(target_idx):
+                        val = str(df.iloc[i][shift_col]).replace('.0', '').strip()
+                        if len(val) == 1 and val.isdigit(): val = '0' + val
+                        if len(val) == 2 and val.isdigit(): hist_counts[val] += 1
+                            
+                    avg_count = sum(hist_counts.values()) / max(1, len(hist_counts))
+                    
+                    to_remove = set()
+                    
+                    # 1. DOUBLE PALTI KILLER
+                    # Agar 14 aur 41 dono list me hain, aur dono ka combine history score weak hai, to dono uda do
+                    for j in jodi_list:
+                        palti = f"{j[1]}{j[0]}"
+                        if palti in jodi_list and palti != j:
+                            combo_score = hist_counts[j] + hist_counts[palti]
+                            # Threshold: Agar combined score average ke 1.5 guna se bhi kam hai, to dono bekar hain
+                            if combo_score < (avg_count * 1.5):
+                                to_remove.add(j)
+                                to_remove.add(palti)
+
+                    # 2. RASHI KILLER
+                    for j in jodi_list:
+                        if is_rashi(j):
+                            if hist_counts[j] < (avg_count * 0.9): # Weak Rashi pair
+                                to_remove.add(j)
+
+                    # Filtered list
+                    filtered_jodis = [j for j in jodi_list if j not in to_remove]
+
+                    # 3. PROXIMITY (+1 / -1) ERROR TRACKER
+                    # Check past 30 days to see engine's most common error gap for this shift
+                    err_a_history = []
+                    err_b_history = []
+                    
+                    for i in range(max(2, target_idx - 30), target_idx):
+                        past_36 = get_base_36_jodis(i, shift_col)
+                        act_a, act_b = get_andar_bahar(df.iloc[i][shift_col])
+                        
+                        if past_36 and act_a and act_b:
+                            # Compare actual against the engine's #1 predicted combination (top score)
+                            # Assuming past_36[0] is the top prediction logically
+                            top_pred = past_36[0] 
+                            pred_a, pred_b = top_pred[0], top_pred[1]
+                            
+                            err_a = (int(act_a) - int(pred_a)) % 10
+                            err_b = (int(act_b) - int(pred_b)) % 10
+                            err_a_history.append(err_a)
+                            err_b_history.append(err_b)
+                            
+                    most_common_err_a = Counter(err_a_history).most_common(1)[0][0] if err_a_history else 0
+                    most_common_err_b = Counter(err_b_history).most_common(1)[0][0] if err_b_history else 0
+                    
+                    # 4. ADD PROXIMITY JODIS
+                    # Agar error +1, -1, ya +2 hai (yani kareeb se miss ho raha hai)
+                    proximity_added = []
+                    if most_common_err_a != 0 or most_common_err_b != 0:
+                        # Top 2 best base jodis uthao aur usme error gap apply karke naye ank banao
+                        for top_j in jodi_list[:2]:
+                            new_a = str((int(top_j[0]) + most_common_err_a) % 10)
+                            new_b = str((int(top_j[1]) + most_common_err_b) % 10)
+                            new_jodi = f"{new_a}{new_b}"
+                            
+                            if new_jodi not in filtered_jodis:
+                                proximity_added.append(new_jodi)
+                                
+                    final_list = list(set(filtered_jodis + proximity_added))
+                    return final_list, len(to_remove), proximity_added
+
+                # --- UI DISPLAY ---
                 parikshan_date_str = df.iloc[idx_parikshan]['DATE'].strftime('%d-%m-%Y') if idx_parikshan is not None else "Data Pending"
                 
                 st.markdown("---")
@@ -154,37 +170,33 @@ if uploaded_file is not None:
                         parikshan_val = str(df.iloc[idx_parikshan][shift]).replace('.0', '').strip() if idx_parikshan is not None else ""
                         if len(parikshan_val) == 1 and parikshan_val.isdigit(): parikshan_val = '0' + parikshan_val
                         
+                        target_idx = idx_parikshan if idx_parikshan is not None else idx_kal + 1
+                        base_36 = get_base_36_jodis(target_idx, shift)
+                        final_jodis, removed_count, added_prox = apply_grandmaster_logic(base_36, target_idx, shift)
+                        
                         st.write(f"**📥 Input (Kal):** {kal_val if kal_val not in ['nan', 'XX', ''] else '-'}")
                         st.write(f"**🎯 Parikshan:** {parikshan_val if parikshan_val not in ['nan', 'XX', ''] else 'Pending'}")
                         
-                        target_idx = idx_parikshan if idx_parikshan is not None else idx_kal + 1
-                        svip, vip, normal = calculate_vip_jodis(target_idx, shift)
+                        st.markdown(f"<div style='font-size:14px; color:#856404; background-color:#fff3cd; padding:5px; border-radius:5px; margin-bottom:10px;'>🗑️ Palti/Rashi Hatai: <b>{removed_count}</b><br>➕ +1/-1 se Jodi Jogi: <b>{len(added_prox)}</b></div>", unsafe_allow_html=True)
                         
-                        if svip:
-                            all_jodis = svip + vip + normal
-                            if parikshan_val in svip:
-                                st.markdown(f"<div style='color:white; background-color:#1e7e34; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>🔥 SUPER VIP PASS! ({parikshan_val})</div>", unsafe_allow_html=True)
-                            elif parikshan_val in vip:
-                                st.markdown(f"<div style='color:black; background-color:#ffc107; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>⭐ VIP PASS! ({parikshan_val})</div>", unsafe_allow_html=True)
-                            elif parikshan_val in normal:
-                                st.markdown(f"<div style='color:white; background-color:#17a2b8; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>✔️ NORMAL PASS! ({parikshan_val})</div>", unsafe_allow_html=True)
+                        if final_jodis:
+                            if parikshan_val in final_jodis:
+                                st.markdown(f"<div style='color:white; background-color:#28a745; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>✅ PASS! ({parikshan_val})</div>", unsafe_allow_html=True)
                             elif parikshan_val:
                                 st.markdown(f"<div style='color:white; background-color:#dc3545; padding:8px; border-radius:5px; font-weight:bold; text-align:center; margin-bottom:10px;'>❌ Miss</div>", unsafe_allow_html=True)
                                 
-                            st.write(f"🔥 **Super VIP (4):** {', '.join(svip)}")
-                            st.write(f"⭐ **VIP (12):** {', '.join(vip)}")
-                            
-                            with st.expander("Show Normal Jodis (20)"):
-                                st.write(", ".join(normal))
+                            st.write(f"**💎 Final VIP Anks ({len(final_jodis)} Jodis):**")
+                            j_chunks = [final_jodis[x:x+5] for x in range(0, len(final_jodis), 5)]
+                            for chunk in j_chunks:
+                                st.code(" | ".join(chunk))
                         else:
                             st.warning("⚠️ Data incomplete hai.")
                             
                         st.markdown("</div>", unsafe_allow_html=True)
 
-                # --- 4. 11-DAY HISTORY HTML TABLES ---
+                # --- 11-DAY HISTORY HTML TABLES ---
                 st.markdown("---")
-                st.subheader("📚 Pichle 11 Din Ka Tracker (Jo Paas Hua, Sirf Us Par Rang)")
-                st.write("🟢 **Super VIP Pass** | 🟡 **VIP Pass** | 🔵 **Normal Pass**")
+                st.subheader("📚 Pichle 11 Din Ka Double Filter Tracker (Jo Paas Hua, Sirf Wahan Hara Dabba)")
                 
                 def generate_html_table(history_slice):
                     html_table = '<table style="width:100%; text-align:center; border-collapse: collapse; font-size: 16px;">'
@@ -199,19 +211,15 @@ if uploaded_file is not None:
                         for c in cols:
                             actual_val = str(row[c]).replace('.0', '').strip()
                             if len(actual_val) == 1 and actual_val.isdigit(): actual_val = '0' + actual_val
-                            
                             if actual_val in ['nan', 'XX', '']:
                                 html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#aaa;">-</td>'
                                 continue
                                 
-                            h_svip, h_vip, h_norm = calculate_vip_jodis(row_idx, c)
+                            h_base_36 = get_base_36_jodis(row_idx, c)
+                            h_final, _, _ = apply_grandmaster_logic(h_base_36, row_idx, c)
                             
-                            if actual_val in h_svip:
-                                html_table += f'<td style="border:2px solid #1e7e34; padding:10px; background-color:#d4edda; color:#155724; font-weight:bold; font-size: 18px;">{actual_val} 🟢</td>'
-                            elif actual_val in h_vip:
-                                html_table += f'<td style="border:2px solid #d39e00; padding:10px; background-color:#fff3cd; color:#856404; font-weight:bold; font-size: 18px;">{actual_val} 🟡</td>'
-                            elif actual_val in h_norm:
-                                html_table += f'<td style="border:2px solid #117a8b; padding:10px; background-color:#d1ecf1; color:#0c5460; font-weight:bold; font-size: 18px;">{actual_val} 🔵</td>'
+                            if actual_val in h_final:
+                                html_table += f'<td style="border:2px solid #1e7e34; padding:10px; background-color:#d4edda; color:#155724; font-weight:bold; font-size: 18px;">{actual_val} ✅</td>'
                             else:
                                 html_table += f'<td style="border:1px solid #ccc; padding:10px; color:#333;">{actual_val}</td>'
                                 
@@ -226,11 +234,10 @@ if uploaded_file is not None:
                 df_tarikh = df[(df['DATE'] <= parikshan_date_pd) & (df['DATE'].dt.day == parikshan_date_pd.day)].tail(11).copy()
 
                 tab1, tab2, tab3 = st.tabs(["1️⃣ Lagaatar (Seq) 11 Din", "2️⃣ War (Day) 11 Din", "3️⃣ Tareekh (Date) 11 Din"])
-                
                 with tab1: st.markdown(generate_html_table(df_seq), unsafe_allow_html=True)
                 with tab2: st.markdown(generate_html_table(df_war), unsafe_allow_html=True)
                 with tab3: st.markdown(generate_html_table(df_tarikh), unsafe_allow_html=True)
 
 else:
     st.info("Kripya engine chalane ke liye 0DSP0 sheet upload karein.")
-    
+                            
