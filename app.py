@@ -1,11 +1,11 @@
 import pandas as pd
 import streamlit as st
 from datetime import timedelta
-from collections import Counter
+from collections import defaultdict
 
 st.set_page_config(layout="wide")
-st.title("MAYA AI 4.0: Time-Series & Error Correction Engine")
-st.write("Is engine mein Tareekh, War, Mahina ka logic aur 'Prediction Aage-Piche (Error Correction)' ka advance logic shamil hai.")
+st.title("MAYA AI: Exact Gap & Transition Engine")
+st.write("Yeh engine check karta hai ki kal history mein kya 'Gap' (Plus/Minus) aaya tha, aur us Gap ke aane ke baad aaj kaunsa Gap sabse zyada aata hai.")
 
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
@@ -46,121 +46,85 @@ if uploaded_file is not None:
         idx_kal = df[df['DATE'] == sel_date_pd].index[0]
         idx_parikshan = idx_kal + 1 if (idx_kal + 1) < len(df) else None
         
-        if idx_kal < 10:
+        if idx_kal < 5:
             st.error("Engine ko check karne ke liye aur purani history chahiye.")
         else:
-            with st.spinner("MAYA AI Mahina, War, Tareekh aur Plus/Minus Gap scan kar rahi hai..."):
+            with st.spinner("MAYA AI 'Kal ka Gap -> Aaj ka Gap' scan kar rahi hai..."):
                 
                 # ==========================================
-                # LAYER 1: TIME-SERIES SCORING (Mahina, War, Tarikh)
+                # LAYER 1: CALCULATE ALL HISTORICAL GAPS
                 # ==========================================
-                tarikh = df.iloc[idx_parikshan if idx_parikshan else idx_kal]['DATE'].day
-                war = df.iloc[idx_parikshan if idx_parikshan else idx_kal]['DATE'].weekday()
-                mahina = df.iloc[idx_parikshan if idx_parikshan else idx_kal]['DATE'].month
+                # Histry me har din apne pichle din se kitna aage/piche tha
+                # Transition Matrix: transition[yesterday_gap][today_gap] = count
+                transition_a = defaultdict(lambda: defaultdict(int))
+                transition_b = defaultdict(lambda: defaultdict(int))
                 
-                time_scores_a = {str(i): 0 for i in range(10)}
-                time_scores_b = {str(i): 0 for i in range(10)}
+                # Limit scan up to the Parikshan day to prevent lookahead
+                limit_idx = idx_parikshan if idx_parikshan is not None else idx_kal + 1
                 
-                limit_idx = idx_parikshan if idx_parikshan else idx_kal
-                
-                for i in range(limit_idx):
-                    hist_date = df.iloc[i]['DATE']
-                    a, b = get_andar_bahar(df.iloc[i][target_shift])
-                    if a and b:
-                        # Tareekh ka Rule
-                        if hist_date.day == tarikh:
-                            time_scores_a[a] += 2
-                            time_scores_b[b] += 2
-                        # War ka Rule
-                        if hist_date.weekday() == war:
-                            time_scores_a[a] += 2
-                            time_scores_b[b] += 2
-                        # Mahina ka Rule
-                        if hist_date.month == mahina:
-                            time_scores_a[a] += 1
-                            time_scores_b[b] += 1
+                for i in range(2, limit_idx):
+                    parso_a, parso_b = get_andar_bahar(df.iloc[i-2][target_shift])
+                    kal_a, kal_b = get_andar_bahar(df.iloc[i-1][target_shift])
+                    aaj_a, aaj_b = get_andar_bahar(df.iloc[i][target_shift])
+                    
+                    if parso_a and kal_a and aaj_a and parso_b and kal_b and aaj_b:
+                        # Yesterday's Gap (Kal aaya hua difference)
+                        gap_kal_a = (int(kal_a) - int(parso_a)) % 10
+                        gap_kal_b = (int(kal_b) - int(parso_b)) % 10
+                        
+                        # Today's Gap (Aaj ka difference)
+                        gap_aaj_a = (int(aaj_a) - int(kal_a)) % 10
+                        gap_aaj_b = (int(aaj_b) - int(kal_b)) % 10
+                        
+                        # Track transition (Agar kal X gap tha, toh aaj Y gap kitni baar aaya)
+                        transition_a[gap_kal_a][gap_aaj_a] += 1
+                        transition_b[gap_kal_b][gap_aaj_b] += 1
 
                 # ==========================================
-                # LAYER 2: BASE PREDICTION LOGIC (Kal aur Parso ka Cross)
+                # LAYER 2: APPLY GAP LOGIC ON TODAY
                 # ==========================================
-                def get_base_prediction(idx):
-                    # Ek basic cross aur vertical calculation
-                    kal_r = df.iloc[idx-1] if idx-1 >= 0 else None
-                    parso_r = df.iloc[idx-2] if idx-2 >= 0 else None
+                # Find exactly what the gap was yesterday (Input Day)
+                parso_input_a, parso_input_b = get_andar_bahar(df.iloc[idx_kal-1][target_shift])
+                kal_input_a, kal_input_b = get_andar_bahar(df.iloc[idx_kal][target_shift])
+                
+                gap_kal_a = (int(kal_input_a) - int(parso_input_a)) % 10 if (kal_input_a and parso_input_a) else None
+                gap_kal_b = (int(kal_input_b) - int(parso_input_b)) % 10 if (kal_input_b and parso_input_b) else None
+                
+                top_expected_gaps_a = []
+                top_expected_gaps_b = []
+                
+                if gap_kal_a is not None and gap_kal_b is not None:
+                    # Sort the most frequent "Today Gaps" based on "Yesterday's Gap"
+                    sort_gaps_a = sorted(transition_a[gap_kal_a].items(), key=lambda x: x[1], reverse=True)
+                    sort_gaps_b = sorted(transition_b[gap_kal_b].items(), key=lambda x: x[1], reverse=True)
                     
-                    scores_a = {str(i): 0 for i in range(10)}
-                    scores_b = {str(i): 0 for i in range(10)}
-                    
-                    # Pichle 30 din ka trend check karke
-                    for i in range(max(2, idx-30), idx):
-                        p_a, p_b = get_andar_bahar(df.iloc[i-2][target_shift])
-                        k_a, k_b = get_andar_bahar(df.iloc[i-1][target_shift])
-                        t_a, t_b = get_andar_bahar(df.iloc[i][target_shift])
-                        
-                        if k_a and t_a and p_a:
-                            req_off_a = (int(t_a) - int(k_a)) % 10
-                            req_off_b = (int(t_b) - int(k_b)) % 10
-                            
-                            curr_k_a, curr_k_b = get_andar_bahar(kal_r[target_shift]) if kal_r is not None else (None, None)
-                            
-                            if curr_k_a:
-                                pred_a = str((int(curr_k_a) + req_off_a) % 10)
-                                pred_b = str((int(curr_k_b) + req_off_b) % 10)
-                                scores_a[pred_a] += 1
-                                scores_b[pred_b] += 1
-                                
-                    # Combining Time-Series Scores with Base Trend Scores
-                    for k in range(10):
-                        scores_a[str(k)] += time_scores_a[str(k)]
-                        scores_b[str(k)] += time_scores_b[str(k)]
-                        
-                    top_a = [x[0] for x in sorted(scores_a.items(), key=lambda x: x[1], reverse=True)[:3]]
-                    top_b = [x[0] for x in sorted(scores_b.items(), key=lambda x: x[1], reverse=True)[:3]]
-                    return top_a, top_b
+                    # Top 4 most frequent gaps for today
+                    top_expected_gaps_a = [x[0] for x in sort_gaps_a[:4]]
+                    top_expected_gaps_b = [x[0] for x in sort_gaps_b[:4]]
 
                 # ==========================================
-                # LAYER 3: ERROR CORRECTION (Aage-Piche Offset Tracking)
+                # LAYER 3: PREDICT FINAL VIP JODIS
                 # ==========================================
-                # Check how much Base Prediction missed the Actual History in the last 60 days
-                error_gaps_a = []
-                error_gaps_b = []
+                vip_jodis = []
+                top_a_digits = []
+                top_b_digits = []
                 
-                for past_idx in range(limit_idx - 60, limit_idx):
-                    if past_idx < 3: continue
-                    
-                    pred_a_list, pred_b_list = get_base_prediction(past_idx)
-                    act_a, act_b = get_andar_bahar(df.iloc[past_idx][target_shift])
-                    
-                    if act_a and pred_a_list and act_b and pred_b_list:
-                        # Assume the top prediction was the engine's choice
-                        top_pred_a = pred_a_list[0]
-                        top_pred_b = pred_b_list[0]
+                if kal_input_a and kal_input_b and top_expected_gaps_a and top_expected_gaps_b:
+                    for ga in top_expected_gaps_a:
+                        final_a = str((int(kal_input_a) + ga) % 10)
+                        top_a_digits.append(final_a)
+                    for gb in top_expected_gaps_b:
+                        final_b = str((int(kal_input_b) + gb) % 10)
+                        top_b_digits.append(final_b)
                         
-                        # Calculate Kitne ank aage/piche hua (Error Gap)
-                        gap_a = (int(act_a) - int(top_pred_a)) % 10
-                        gap_b = (int(act_b) - int(top_pred_b)) % 10
-                        
-                        error_gaps_a.append(gap_a)
-                        error_gaps_b.append(gap_b)
+                    top_a_digits = list(dict.fromkeys(top_a_digits)) # Remove duplicates
+                    top_b_digits = list(dict.fromkeys(top_b_digits))
+                    
+                    for a in top_a_digits:
+                        for b in top_b_digits:
+                            vip_jodis.append(f"{a}{b}")
 
-                # Find the most frequent "Fail Hone ka Gap"
-                common_gap_a = Counter(error_gaps_a).most_common(1)[0][0] if error_gaps_a else 0
-                common_gap_b = Counter(error_gaps_b).most_common(1)[0][0] if error_gaps_b else 0
-
-                # ==========================================
-                # FINAL PREDICTION WITH ERROR FIX
-                # ==========================================
-                base_today_a, base_today_b = get_base_prediction(idx_parikshan if idx_parikshan else idx_kal + 1)
-                
-                # Adding the Gap to fix the history miss
-                final_vip_jodis = []
-                for ba in base_today_a:
-                    fixed_a = str((int(ba) + common_gap_a) % 10)
-                    for bb in base_today_b:
-                        fixed_b = str((int(bb) + common_gap_b) % 10)
-                        final_vip_jodis.append(f"{fixed_a}{fixed_b}")
-                
-                # Parikshan Data Check
+                # --- Parikshan Result Fetching ---
                 parikshan_actual = ""
                 parikshan_date_str = "Data Pending"
                 if idx_parikshan is not None:
@@ -172,37 +136,64 @@ if uploaded_file is not None:
                 st.markdown("---")
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.info("📅 **Time-Series Rule Applied:**")
-                    st.write(f"- Tareekh: {tarikh}\n- War: {df.iloc[idx_parikshan if idx_parikshan else idx_kal]['DATE'].strftime('%A')}\n- Mahina: {mahina}")
+                    st.info(f"🔄 **History Check:** \nKal Andar ka Gap: **{'+'+str(gap_kal_a) if gap_kal_a is not None else 'N/A'}** \nKal Bahar ka Gap: **{'+'+str(gap_kal_b) if gap_kal_b is not None else 'N/A'}**")
                 with c2:
-                    st.warning("⚙️ **Aage-Piche (Error Fix) Tracker:**")
-                    st.write(f"- Andar History Miss Gap: **{'+' + str(common_gap_a) if common_gap_a else 'No Change'}**")
-                    st.write(f"- Bahar History Miss Gap: **{'+' + str(common_gap_b) if common_gap_b else 'No Change'}**")
+                    a_info = ', '.join([f"+{g}" for g in top_expected_gaps_a])
+                    b_info = ', '.join([f"+{g}" for g in top_expected_gaps_b])
+                    st.warning(f"📈 **Aaj Ka Predicted Gap:** \nAndar: **{a_info}** \nBahar: **{b_info}**")
                 with c3:
-                    st.error(f"🎯 **Aaj/Parikshan ({parikshan_date_str}):**")
-                    st.write(f"### {parikshan_actual if parikshan_actual else 'Result Aana Baki Hai'}")
+                    st.error(f"🎯 **Aaj/Parikshan ({parikshan_date_str}):** \n### {parikshan_actual if parikshan_actual else 'Result Aana Baki Hai'}")
                 st.markdown("---")
 
-                if final_vip_jodis:
-                    st.write("### 💎 Target VIP Anks (Error Corrected Jodis)")
-                    if parikshan_actual in final_vip_jodis:
-                        st.success(f"🎉 **SHANDAAR PASS!** Error correction ne result ko exactly match kara diya!")
+                if vip_jodis:
+                    st.write("### 💎 Target VIP Anks (Based on Gap Repetition Frequency)")
+                    if parikshan_actual in vip_jodis:
+                        st.success(f"🎉 **SHANDAAR PASS!** Gap Tracking Engine ne exact result pakad liya!")
                     elif parikshan_actual:
                         st.error(f"Target miss hua. Aaya: {parikshan_actual}")
                     
                     jodi_html = "<div style='display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;'>"
-                    for j in list(set(final_vip_jodis)): # Remove duplicates if any
+                    for j in vip_jodis:
                         if j == parikshan_actual:
                             jodi_html += f"<div style='background-color: #28a745; color: white; padding: 10px 20px; font-size: 20px; font-weight: bold; border-radius: 8px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);'>{j} ✅ PASS</div>"
                         else:
                             jodi_html += f"<div style='background-color: #f1f3f5; color: #333; padding: 10px 20px; font-size: 18px; font-weight: bold; border-radius: 8px; border: 1px solid #ccc;'>{j}</div>"
                     jodi_html += "</div>"
                     st.markdown(jodi_html, unsafe_allow_html=True)
+                else:
+                    st.error("Gap calculate karne ke liye data missing hai.")
 
-                # --- 11-DAY HISTORY HTML TABLE (ONLY GREEN BOXES FOR PASS) ---
+                # ==========================================
+                # 11-DAY HISTORY HTML TABLE (ONLY GREEN BOXES FOR PASS)
+                # ==========================================
                 st.markdown("---")
-                st.subheader("📚 Pichle 11 Din Ka Cross-Check (Hare Dabbe)")
+                st.subheader("📚 Pichle 11 Din Ka Gap Tracker (Sirf Paas = Hara Dabba)")
                 
+                # Pre-calculate a function to predict for any day i using the transition logic
+                def predict_for_day(day_idx):
+                    try:
+                        p_a, p_b = get_andar_bahar(df.iloc[day_idx-2][target_shift])
+                        k_a, k_b = get_andar_bahar(df.iloc[day_idx-1][target_shift])
+                        
+                        if not (p_a and k_a and p_b and k_b): return []
+                        
+                        g_k_a = (int(k_a) - int(p_a)) % 10
+                        g_k_b = (int(k_b) - int(p_b)) % 10
+                        
+                        s_g_a = sorted(transition_a[g_k_a].items(), key=lambda x: x[1], reverse=True)[:4]
+                        s_g_b = sorted(transition_b[g_k_b].items(), key=lambda x: x[1], reverse=True)[:4]
+                        
+                        top_ga = [x[0] for x in s_g_a]
+                        top_gb = [x[0] for x in s_g_b]
+                        
+                        day_jodis = []
+                        for ga in top_ga:
+                            for gb in top_gb:
+                                day_jodis.append(f"{(int(k_a) + ga) % 10}{(int(k_b) + gb) % 10}")
+                        return day_jodis
+                    except:
+                        return []
+
                 history_table_data = []
                 start_idx = max(2, (idx_parikshan if idx_parikshan is not None else idx_kal) - 10)
                 end_idx = idx_parikshan if idx_parikshan is not None else idx_kal
@@ -217,14 +208,8 @@ if uploaded_file is not None:
                         
                         is_pass = False
                         if c == target_shift:
-                            # Verify past 11 days with the same error offset
-                            past_a, past_b = get_base_prediction(i)
-                            past_final_jodis = []
-                            for pa in past_a:
-                                for pb in past_b:
-                                    past_final_jodis.append(f"{(int(pa)+common_gap_a)%10}{(int(pb)+common_gap_b)%10}")
-                                    
-                            if actual_val in past_final_jodis:
+                            hist_jodis = predict_for_day(i)
+                            if actual_val in hist_jodis:
                                 is_pass = True
                                 
                         row_data[c] = {"val": actual_val, "is_pass": is_pass}
@@ -255,4 +240,4 @@ if uploaded_file is not None:
 
 else:
     st.info("Kripya engine chalane ke liye 0DSP0 sheet upload karein.")
-                        
+                                                                                                                                                           
