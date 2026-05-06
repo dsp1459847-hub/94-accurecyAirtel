@@ -1,10 +1,11 @@
 import pandas as pd
 import streamlit as st
 from datetime import timedelta
+from collections import Counter
 
 st.set_page_config(layout="wide")
-st.title("MAYA AI: 3D Cross-Scoring & Selection Engine")
-st.write("Ab prediction kabhi gayab nahi hogi. Engine seedha, upar-neeche aur cross check karke Top 16 VIP Jodi nikalta hai.")
+st.title("MAYA AI 4.0: Time-Series & Error Correction Engine")
+st.write("Is engine mein Tareekh, War, Mahina ka logic aur 'Prediction Aage-Piche (Error Correction)' ka advance logic shamil hai.")
 
 uploaded_file = st.file_uploader("Apni 0DSP0.xlsx ya CSV file upload karein", type=['csv', 'xlsx'])
 
@@ -45,99 +46,121 @@ if uploaded_file is not None:
         idx_kal = df[df['DATE'] == sel_date_pd].index[0]
         idx_parikshan = idx_kal + 1 if (idx_kal + 1) < len(df) else None
         
-        if idx_kal < 2:
-            st.error("Engine ko Cross check karne ke liye aur purani history chahiye (Kam se kam 3 din).")
+        if idx_kal < 10:
+            st.error("Engine ko check karne ke liye aur purani history chahiye.")
         else:
-            with st.spinner("MAYA AI rules aur score calculate kar rahi hai..."):
+            with st.spinner("MAYA AI Mahina, War, Tareekh aur Plus/Minus Gap scan kar rahi hai..."):
                 
-                # --- STEP 1: DEFINE RELATIONS ---
-                relations = [] 
-                for c in cols:
-                    rel_type = "Straight" if c == target_shift else "Cross"
-                    relations.append((1, c, rel_type)) # Kal se Aaj
-                    
-                    if c == target_shift:
-                        relations.append((2, c, "Vertical")) # Parso se Aaj
+                # ==========================================
+                # LAYER 1: TIME-SERIES SCORING (Mahina, War, Tarikh)
+                # ==========================================
+                tarikh = df.iloc[idx_parikshan if idx_parikshan else idx_kal]['DATE'].day
+                war = df.iloc[idx_parikshan if idx_parikshan else idx_kal]['DATE'].weekday()
+                mahina = df.iloc[idx_parikshan if idx_parikshan else idx_kal]['DATE'].month
+                
+                time_scores_a = {str(i): 0 for i in range(10)}
+                time_scores_b = {str(i): 0 for i in range(10)}
+                
+                limit_idx = idx_parikshan if idx_parikshan else idx_kal
+                
+                for i in range(limit_idx):
+                    hist_date = df.iloc[i]['DATE']
+                    a, b = get_andar_bahar(df.iloc[i][target_shift])
+                    if a and b:
+                        # Tareekh ka Rule
+                        if hist_date.day == tarikh:
+                            time_scores_a[a] += 2
+                            time_scores_b[b] += 2
+                        # War ka Rule
+                        if hist_date.weekday() == war:
+                            time_scores_a[a] += 2
+                            time_scores_b[b] += 2
+                        # Mahina ka Rule
+                        if hist_date.month == mahina:
+                            time_scores_a[a] += 1
+                            time_scores_b[b] += 1
 
-                # --- STEP 2: HISTORICAL FREQUENCY SCAN ---
-                freq_tables = {}
-                for rel in relations:
-                    day_off, src_col, _ = rel
-                    f_a = {i: 0 for i in range(10)}
-                    f_b = {i: 0 for i in range(10)}
+                # ==========================================
+                # LAYER 2: BASE PREDICTION LOGIC (Kal aur Parso ka Cross)
+                # ==========================================
+                def get_base_prediction(idx):
+                    # Ek basic cross aur vertical calculation
+                    kal_r = df.iloc[idx-1] if idx-1 >= 0 else None
+                    parso_r = df.iloc[idx-2] if idx-2 >= 0 else None
                     
-                    limit_idx = idx_parikshan if idx_parikshan is not None else idx_kal + 1
-                    for i in range(2, limit_idx):
-                        src_r = df.iloc[i - day_off]
-                        tgt_r = df.iloc[i]
+                    scores_a = {str(i): 0 for i in range(10)}
+                    scores_b = {str(i): 0 for i in range(10)}
+                    
+                    # Pichle 30 din ka trend check karke
+                    for i in range(max(2, idx-30), idx):
+                        p_a, p_b = get_andar_bahar(df.iloc[i-2][target_shift])
+                        k_a, k_b = get_andar_bahar(df.iloc[i-1][target_shift])
+                        t_a, t_b = get_andar_bahar(df.iloc[i][target_shift])
                         
-                        s_a, s_b = get_andar_bahar(src_r[src_col])
-                        t_a, t_b = get_andar_bahar(tgt_r[target_shift])
+                        if k_a and t_a and p_a:
+                            req_off_a = (int(t_a) - int(k_a)) % 10
+                            req_off_b = (int(t_b) - int(k_b)) % 10
+                            
+                            curr_k_a, curr_k_b = get_andar_bahar(kal_r[target_shift]) if kal_r is not None else (None, None)
+                            
+                            if curr_k_a:
+                                pred_a = str((int(curr_k_a) + req_off_a) % 10)
+                                pred_b = str((int(curr_k_b) + req_off_b) % 10)
+                                scores_a[pred_a] += 1
+                                scores_b[pred_b] += 1
+                                
+                    # Combining Time-Series Scores with Base Trend Scores
+                    for k in range(10):
+                        scores_a[str(k)] += time_scores_a[str(k)]
+                        scores_b[str(k)] += time_scores_b[str(k)]
                         
-                        if s_a and t_a and s_b and t_b:
-                            f_a[(int(t_a) - int(s_a)) % 10] += 1
-                            f_b[(int(t_b) - int(s_b)) % 10] += 1
-                            
-                    freq_tables[rel] = {'A': f_a, 'B': f_b}
+                    top_a = [x[0] for x in sorted(scores_a.items(), key=lambda x: x[1], reverse=True)[:3]]
+                    top_b = [x[0] for x in sorted(scores_b.items(), key=lambda x: x[1], reverse=True)[:3]]
+                    return top_a, top_b
 
-                rules_book = {}
-                for rel, freqs in freq_tables.items():
-                    sort_a = sorted(freqs['A'].items(), key=lambda x: x[1])
-                    sort_b = sorted(freqs['B'].items(), key=lambda x: x[1])
-                    
-                    # Bottom 2 (Kachra - Negative Points)
-                    bad_a = [x[0] for x in sort_a[:2]]
-                    bad_b = [x[0] for x in sort_b[:2]]
-                    
-                    # Top 3 (VIP - Positive Points)
-                    good_a = {x[0]: x[1] for x in sort_a[-3:]} 
-                    good_b = {x[0]: x[1] for x in sort_b[-3:]}
-                    
-                    rules_book[rel] = {'bad_a': bad_a, 'bad_b': bad_b, 'good_a': good_a, 'good_b': good_b}
-
-                # --- STEP 3: PREDICTION SCORING (NO ZERO BLANKS) ---
-                def get_dynamic_jodis(curr_parso, curr_kal):
-                    jodi_scores = []
-                    for a in range(10):
-                        for b in range(10):
-                            jodi_str = f"{a}{b}"
-                            score = 0
-                            
-                            for rel in relations:
-                                day_off, src_col, r_type = rel
-                                
-                                if day_off == 1 and curr_kal is not None: src_val = curr_kal.get(src_col, None)
-                                elif day_off == 2 and curr_parso is not None: src_val = curr_parso.get(src_col, None)
-                                else: src_val = None
-                                
-                                s_a, s_b = get_andar_bahar(src_val)
-                                if s_a and s_b:
-                                    req_a = (a - int(s_a)) % 10
-                                    req_b = (b - int(s_b)) % 10
-                                    
-                                    rb = rules_book[rel]
-                                    weight = 2 if r_type in ["Straight", "Vertical"] else 1
-                                    
-                                    # Negative Scoring
-                                    if req_a in rb['bad_a']: score -= (50 * weight)
-                                    if req_b in rb['bad_b']: score -= (50 * weight)
-                                        
-                                    # Positive Scoring
-                                    if req_a in rb['good_a']: score += (rb['good_a'][req_a] * weight)
-                                    if req_b in rb['good_b']: score += (rb['good_b'][req_b] * weight)
-
-                            # Ab sabhi Jodis ka score aayega, sabse best top par rahenge
-                            jodi_scores.append((jodi_str, score))
-                                
-                    jodi_scores.sort(key=lambda x: x[1], reverse=True)
-                    return [x[0] for x in jodi_scores[:16]] # Top 16 always returned!
-
-                # Current Data Fetching
-                kal_row = df.iloc[idx_kal]
-                parso_row = df.iloc[idx_kal - 1] if idx_kal - 1 >= 0 else None
+                # ==========================================
+                # LAYER 3: ERROR CORRECTION (Aage-Piche Offset Tracking)
+                # ==========================================
+                # Check how much Base Prediction missed the Actual History in the last 60 days
+                error_gaps_a = []
+                error_gaps_b = []
                 
-                vip_jodis = get_dynamic_jodis(parso_row, kal_row)
+                for past_idx in range(limit_idx - 60, limit_idx):
+                    if past_idx < 3: continue
+                    
+                    pred_a_list, pred_b_list = get_base_prediction(past_idx)
+                    act_a, act_b = get_andar_bahar(df.iloc[past_idx][target_shift])
+                    
+                    if act_a and pred_a_list and act_b and pred_b_list:
+                        # Assume the top prediction was the engine's choice
+                        top_pred_a = pred_a_list[0]
+                        top_pred_b = pred_b_list[0]
+                        
+                        # Calculate Kitne ank aage/piche hua (Error Gap)
+                        gap_a = (int(act_a) - int(top_pred_a)) % 10
+                        gap_b = (int(act_b) - int(top_pred_b)) % 10
+                        
+                        error_gaps_a.append(gap_a)
+                        error_gaps_b.append(gap_b)
+
+                # Find the most frequent "Fail Hone ka Gap"
+                common_gap_a = Counter(error_gaps_a).most_common(1)[0][0] if error_gaps_a else 0
+                common_gap_b = Counter(error_gaps_b).most_common(1)[0][0] if error_gaps_b else 0
+
+                # ==========================================
+                # FINAL PREDICTION WITH ERROR FIX
+                # ==========================================
+                base_today_a, base_today_b = get_base_prediction(idx_parikshan if idx_parikshan else idx_kal + 1)
                 
+                # Adding the Gap to fix the history miss
+                final_vip_jodis = []
+                for ba in base_today_a:
+                    fixed_a = str((int(ba) + common_gap_a) % 10)
+                    for bb in base_today_b:
+                        fixed_b = str((int(bb) + common_gap_b) % 10)
+                        final_vip_jodis.append(f"{fixed_a}{fixed_b}")
+                
+                # Parikshan Data Check
                 parikshan_actual = ""
                 parikshan_date_str = "Data Pending"
                 if idx_parikshan is not None:
@@ -145,19 +168,30 @@ if uploaded_file is not None:
                     if len(parikshan_actual) == 1 and parikshan_actual.isdigit(): parikshan_actual = '0' + parikshan_actual
                     parikshan_date_str = df.iloc[idx_parikshan]['DATE'].strftime('%d-%m-%Y')
 
+                # --- UI DISPLAY ---
                 st.markdown("---")
-                st.write(f"🎯 **Aaj/Parikshan ({parikshan_date_str}):** {parikshan_actual if parikshan_actual else 'Abhi result aana baki hai'}")
-                
-                # --- DISPLAY FINAL RESULTS ---
-                if vip_jodis:
-                    st.write("### 💎 Target VIP Anks (Top 16 Scored Jodis)")
-                    if parikshan_actual in vip_jodis:
-                        st.success(f"🎉 **SHANDAAR PASS!** Parikshan ka ank **[{parikshan_actual}]** hamare VIP Ankon mein direct paas ho gaya!")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.info("📅 **Time-Series Rule Applied:**")
+                    st.write(f"- Tareekh: {tarikh}\n- War: {df.iloc[idx_parikshan if idx_parikshan else idx_kal]['DATE'].strftime('%A')}\n- Mahina: {mahina}")
+                with c2:
+                    st.warning("⚙️ **Aage-Piche (Error Fix) Tracker:**")
+                    st.write(f"- Andar History Miss Gap: **{'+' + str(common_gap_a) if common_gap_a else 'No Change'}**")
+                    st.write(f"- Bahar History Miss Gap: **{'+' + str(common_gap_b) if common_gap_b else 'No Change'}**")
+                with c3:
+                    st.error(f"🎯 **Aaj/Parikshan ({parikshan_date_str}):**")
+                    st.write(f"### {parikshan_actual if parikshan_actual else 'Result Aana Baki Hai'}")
+                st.markdown("---")
+
+                if final_vip_jodis:
+                    st.write("### 💎 Target VIP Anks (Error Corrected Jodis)")
+                    if parikshan_actual in final_vip_jodis:
+                        st.success(f"🎉 **SHANDAAR PASS!** Error correction ne result ko exactly match kara diya!")
                     elif parikshan_actual:
                         st.error(f"Target miss hua. Aaya: {parikshan_actual}")
                     
                     jodi_html = "<div style='display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;'>"
-                    for j in vip_jodis:
+                    for j in list(set(final_vip_jodis)): # Remove duplicates if any
                         if j == parikshan_actual:
                             jodi_html += f"<div style='background-color: #28a745; color: white; padding: 10px 20px; font-size: 20px; font-weight: bold; border-radius: 8px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);'>{j} ✅ PASS</div>"
                         else:
@@ -167,7 +201,7 @@ if uploaded_file is not None:
 
                 # --- 11-DAY HISTORY HTML TABLE (ONLY GREEN BOXES FOR PASS) ---
                 st.markdown("---")
-                st.subheader("📚 Pichle 11 Din Ka Cross-Check (Sirf Paas Hone Par Hara Dabba)")
+                st.subheader("📚 Pichle 11 Din Ka Cross-Check (Hare Dabbe)")
                 
                 history_table_data = []
                 start_idx = max(2, (idx_parikshan if idx_parikshan is not None else idx_kal) - 10)
@@ -183,11 +217,14 @@ if uploaded_file is not None:
                         
                         is_pass = False
                         if c == target_shift:
-                            t_kal = df.iloc[i-1] if i-1 >= 0 else None
-                            t_parso = df.iloc[i-2] if i-2 >= 0 else None
-                            
-                            hist_jodis = get_dynamic_jodis(t_parso, t_kal)
-                            if actual_val in hist_jodis:
+                            # Verify past 11 days with the same error offset
+                            past_a, past_b = get_base_prediction(i)
+                            past_final_jodis = []
+                            for pa in past_a:
+                                for pb in past_b:
+                                    past_final_jodis.append(f"{(int(pa)+common_gap_a)%10}{(int(pb)+common_gap_b)%10}")
+                                    
+                            if actual_val in past_final_jodis:
                                 is_pass = True
                                 
                         row_data[c] = {"val": actual_val, "is_pass": is_pass}
@@ -218,4 +255,4 @@ if uploaded_file is not None:
 
 else:
     st.info("Kripya engine chalane ke liye 0DSP0 sheet upload karein.")
-                
+                        
